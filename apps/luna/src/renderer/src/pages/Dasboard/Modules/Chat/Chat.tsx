@@ -10,10 +10,7 @@ import {
   Sparkles,
   Search,
   Bot,
-  Square,
-  Trash2,
-  Plus,
-  Edit2
+  Square
 } from 'lucide-react'
 import { MessageList } from './components/MessageList'
 import {
@@ -50,14 +47,10 @@ export const Chat: React.FC<ChatProps> = ({
   model,
   activeSessionId,
   setActiveSessionId,
-  sessions,
   setSessions,
   messages,
   setMessages,
-  loadSession,
-  handleCreateSession,
-  handleRenameSession,
-  handleDeleteSession
+  handleRenameSession
 }) => {
   const [inputText, setInputText] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -91,18 +84,6 @@ export const Chat: React.FC<ChatProps> = ({
   // Save chat history mock helper (just updates local state)
   const saveHistory = (newMsgs: Message[]) => {
     setMessages(newMsgs)
-  }
-
-  const handleClearChat = async () => {
-    if (confirm('Are you sure you want to clear this conversation?')) {
-      if (activeSessionId) {
-        await handleDeleteSession(activeSessionId)
-      } else {
-        setMessages([])
-      }
-      setStreamingMessage('')
-      setIsStreaming(false)
-    }
   }
 
   const handleAbort = () => {
@@ -511,7 +492,7 @@ export const Chat: React.FC<ChatProps> = ({
     <div className="flex-1 flex flex-col bg-background text-foreground transition-colors duration-300 relative justify-between items-center p-6 min-h-0 overflow-hidden">
       {/* Background Horizon Glow */}
       <img
-        src="/bg.png"
+        src="./bg.png"
         alt="Glow Horizon"
         className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-5xl pointer-events-none select-none z-0 opacity-20 dark:opacity-40"
       />

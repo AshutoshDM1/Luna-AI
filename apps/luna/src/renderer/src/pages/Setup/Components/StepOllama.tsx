@@ -8,14 +8,14 @@ interface StepOllamaProps {
 }
 
 export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => {
-  const [platform, setPlatform] = useState<string>('win32')
+  const [, setPlatform] = useState<string>('win32')
   const [isChecking, setIsChecking] = useState(true)
   const [hasOllama, setHasOllama] = useState(false)
   const [installStatus, setInstallStatus] = useState<string>('')
   const [isInstalling, setIsInstalling] = useState(false)
   const [isPulling, setIsPulling] = useState(false)
   const [downloadPercent, setDownloadPercent] = useState<number | null>(null)
-  const [pullProgress, setPullProgress] = useState<string>('')
+  const [, setPullProgress] = useState<string>('')
   const [pullLogs, setPullLogs] = useState<string[]>([])
 
   useEffect(() => {

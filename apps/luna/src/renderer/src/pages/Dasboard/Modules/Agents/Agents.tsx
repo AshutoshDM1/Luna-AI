@@ -72,7 +72,7 @@ export const Agents: React.FC = () => {
     <div className="flex-1 flex flex-col p-8 sm:p-10 md:p-12 overflow-y-auto bg-background text-foreground transition-colors duration-300 relative">
       {/* Background Glow */}
       <img
-        src="/bg.png"
+        src="./bg.png"
         alt="Glow Horizon"
         className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-5xl pointer-events-none select-none z-0 opacity-15 dark:opacity-30"
       />

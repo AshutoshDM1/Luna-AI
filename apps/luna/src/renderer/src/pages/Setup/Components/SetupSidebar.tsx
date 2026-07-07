@@ -10,7 +10,7 @@ export const SetupSidebar: React.FC<SetupSidebarProps> = ({ currentStep }) => {
     <div className="w-full md:w-1/2 flex flex-col justify-end p-10 md:p-14 relative overflow-hidden select-none shrink-0 z-10 bg-black">
       {/* Bottom Horizon Glow (Image-based matching Welcome page) */}
       <img
-        src="/bg.png"
+        src="./bg.png"
         alt="Background glow"
         className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-5xl pointer-events-none select-none z-0 opacity-70"
       />

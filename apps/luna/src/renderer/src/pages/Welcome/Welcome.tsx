@@ -38,7 +38,7 @@ export const Welcome: React.FC<WelcomeProps> = ({ onGetStarted }) => {
 
       {/* Bottom Horizon Glow (Image-based) */}
       <img
-        src="/bg.png"
+        src="./bg.png"
         alt="Background glow"
         className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-7xl pointer-events-none select-none z-0 opacity-80"
       />

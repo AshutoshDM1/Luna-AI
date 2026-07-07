@@ -28,12 +28,8 @@ export const StepIntegrations: React.FC<StepIntegrationsProps> = ({
   setLaunchOnStartup,
   hotkeyEnabled,
   setHotkeyEnabled,
-  memoryEnabled,
-  setMemoryEnabled,
   language,
-  setLanguage,
-  theme,
-  setTheme
+  setLanguage
 }) => {
   return (
     <div className="space-y-4 animate-[fadeIn_0.3s_ease-out] max-h-[360px] overflow-y-auto pr-1 scrollbar-none">

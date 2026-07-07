@@ -41,7 +41,7 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onBack }) => {
     <div className="setup-dark min-h-screen w-full flex flex-col justify-center items-center bg-black text-foreground font-sans transition-colors duration-200 relative overflow-hidden p-6">
       {/* Bottom Horizon Glow (Image-based) */}
       <img
-        src="/bg.png"
+        src="./bg.png"
         alt="Background glow"
         className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-7xl pointer-events-none select-none z-0 opacity-85"
       />

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { MessageSquare, Cpu, Bot, User, Settings, Astroid, Sparkle } from 'lucide-react'
+import { MessageSquare, Bot, User, Sparkle } from 'lucide-react'
 
 export type DashboardTab = 'chat' | 'models' | 'agents' | 'profile' | 'settings'
 
