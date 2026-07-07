@@ -5,7 +5,6 @@ import {
   Infinity,
   ArrowUp,
   AtSign,
-  ChevronDown,
   X,
   MessageSquare,
   Sparkles,
@@ -15,6 +14,13 @@ import {
   Trash2
 } from 'lucide-react'
 import { MessageList } from './components/MessageList'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 
 interface ChatProps {
   assistantName: string
@@ -32,7 +38,16 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
   const [isStreaming, setIsStreaming] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
   const [streamingMessage, setStreamingMessage] = useState('')
+  const [selectedModel, setSelectedModel] = useState(model || 'gemma3:4b')
+  const [chatMode, setChatMode] = useState<'agent' | 'ask'>('ask')
   const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Sync selectedModel state when prop changes
+  useEffect(() => {
+    if (model) {
+      setSelectedModel(model)
+    }
+  }, [model])
 
   // Load chat history from localStorage
   useEffect(() => {
@@ -93,7 +108,7 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: model || 'gemma3:4b',
+          model: selectedModel,
           messages: updatedMessages
         }),
         signal: abortController.signal
@@ -225,64 +240,9 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
     }
   }
 
-  return (
-    <div className="flex-1 flex flex-col bg-background text-foreground transition-colors duration-300 relative justify-between items-center p-6 min-h-0">
-      {/* Background Horizon Glow */}
-      <img
-        src="/bg.png"
-        alt="Glow Horizon"
-        className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-5xl pointer-events-none select-none z-0 opacity-20 dark:opacity-40"
-      />
-
-      {/* Top Right Clear Chat Button */}
-      <div className="absolute top-6 right-6 z-20">
-        <button
-          type="button"
-          onClick={handleClearChat}
-          disabled={messages.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card/40 backdrop-blur-sm text-[10px] font-semibold text-muted-foreground hover:bg-accent hover:text-destructive hover:border-destructive/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground disabled:hover:border-border transition-all cursor-pointer shadow-sm"
-          title="Clear Conversation"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          <span>Clear Chat</span>
-        </button>
-      </div>
-
-      {/* Main Messages Container */}
-      <div className="w-full max-w-5xl z-10 flex-1 flex flex-col justify-center min-h-0">
-        {messages.length === 0 ? (
-          /* Centered Empty State Heading */
-          <div className="text-center space-y-3 py-12 animate-[fadeIn_0.3s_ease-out]">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600/10 border border-indigo-500/25 flex items-center justify-center mx-auto text-indigo-500 shadow-md">
-              <Bot className="w-6 h-6" />
-            </div>
-            <div className="space-y-1">
-              <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                Spice it up — what do you need?
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Ask {assistantName} anything, search the web, or coordinate local tasks.
-              </p>
-            </div>
-          </div>
-        ) : (
-          /* Dynamic Scrollable Chat Log */
-          <div className="flex flex-col min-h-0 flex-1 justify-end pb-4">
-            <MessageList
-              messages={messages}
-              assistantName={assistantName}
-              isStreaming={isStreaming}
-              isThinking={isThinking}
-              streamingMessage={streamingMessage}
-              onSuggestionClick={setInputText}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* Input Area Bottom Dock */}
-      <div className="w-full max-w-5xl z-10 flex flex-col gap-2 pt-2 shrink-0">
-        {/* Combined Chat Input Control Container */}
+  const renderInputArea = () => {
+    return (
+      <div className="w-full flex flex-col gap-2 pt-2">
         <form onSubmit={handleSubmit} className="w-full flex flex-col gap-2">
           <div className="w-full border border-border bg-card/60 backdrop-blur-md rounded-2xl p-4 shadow-lg flex flex-col gap-3">
             {/* Top Toolbar */}
@@ -294,10 +254,6 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
                 <AtSign className="w-3 h-3" />
                 <span>Add context</span>
               </button>
-
-              <span className="text-[10px] text-muted-foreground font-mono bg-accent/40 px-2 py-0.5 rounded-md border border-border/60">
-                Brain: {model || 'gemma3:4b'}
-              </span>
             </div>
 
             {/* Input Textarea */}
@@ -311,7 +267,7 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
             />
 
             {/* Bottom Controls Row */}
-            <div className="flex items-center justify-between pt-2 border-t border-border/40">
+            <div className="flex items-center justify-between pt-2">
               <div className="flex items-center gap-2 sm:gap-3 text-muted-foreground">
                 <button
                   type="button"
@@ -320,26 +276,80 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
+
+                {/* Chat Mode Select (Ask / Agent) */}
+                <Select
+                  value={chatMode}
+                  onValueChange={(val) => setChatMode(val as 'agent' | 'ask')}
+                >
+                  <SelectTrigger
+                    className={`h-8 text-[11px] border cursor-pointer gap-1.5 flex items-center justify-between transition-all duration-300 ${
+                      chatMode === 'ask'
+                        ? 'bg-indigo-500/10 border-indigo-500/25 text-indigo-400 hover:bg-indigo-500/20 hover:text-indigo-300'
+                        : 'bg-green-500/10 border-green-500/25 text-green-400 hover:bg-green-500/20 hover:text-green-300'
+                    } px-2.5 w-[95px]`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {chatMode === 'ask' ? (
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      ) : (
+                        <Bot className="w-3.5 h-3.5" />
+                      )}
+                      <span>{chatMode === 'ask' ? 'Ask' : 'Agent'}</span>
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border text-popover-foreground text-[11px]">
+                    <SelectItem value="ask">
+                      <div className="flex items-center gap-1.5 text-indigo-400">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Ask</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="agent">
+                      <div className="flex items-center gap-1.5 text-green-400">
+                        <Bot className="w-3.5 h-3.5" />
+                        <span>Agent</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Model Select Dropdown */}
+                <Select
+                  value={selectedModel}
+                  onValueChange={(newModel) => {
+                    setSelectedModel(newModel)
+                    try {
+                      const savedSetup = localStorage.getItem('luna_setup')
+                      if (savedSetup) {
+                        const parsed = JSON.parse(savedSetup)
+                        parsed.model = newModel
+                        localStorage.setItem('luna_setup', JSON.stringify(parsed))
+                      }
+                    } catch (err) {
+                      console.error(err)
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-[11px] font-mono bg-accent/40 border-border/60 hover:bg-accent hover:text-foreground text-muted-foreground px-2.5 w-[125px] shadow-sm cursor-pointer">
+                    <SelectValue placeholder="Model" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border text-popover-foreground text-[11px] font-mono">
+                    <SelectItem value="gemma3:4b">gemma3:4b</SelectItem>
+                    <SelectItem value="llama3">llama3</SelectItem>
+                    <SelectItem value="gemma2">gemma2</SelectItem>
+                    <SelectItem value="qwen2.5">qwen2.5</SelectItem>
+                    <SelectItem value="phi3">phi3</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Research Button */}
                 <button
                   type="button"
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-accent hover:text-foreground text-[10px] font-bold transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 hover:text-primary text-[11px] font-bold text-primary transition-all cursor-pointer h-8 shadow-sm"
                 >
-                  <span>Auto</span>
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-                <button
-                  type="button"
-                  className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-md hover:bg-accent/80 hover:text-primary text-[10px] font-bold text-primary bg-primary/10 transition-all cursor-pointer"
-                >
-                  <Infinity className="w-3.5 h-3.5" />
+                  <Infinity className="w-4 h-4" />
                   <span>Research</span>
-                </button>
-                <button
-                  type="button"
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-accent hover:text-foreground text-[10px] font-bold transition-all cursor-pointer"
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>All sources</span>
                 </button>
               </div>
 
@@ -416,6 +426,74 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
           </div>
         </div>
       </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 flex flex-col bg-background text-foreground transition-colors duration-300 relative justify-between items-center p-6 min-h-0">
+      {/* Background Horizon Glow */}
+      <img
+        src="/bg.png"
+        alt="Glow Horizon"
+        className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-5xl pointer-events-none select-none z-0 opacity-20 dark:opacity-40"
+      />
+
+      {/* Top Right Clear Chat Button */}
+      <div className="absolute top-6 right-6 z-20">
+        <button
+          type="button"
+          onClick={handleClearChat}
+          disabled={messages.length === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card/40 backdrop-blur-sm text-[10px] font-semibold text-muted-foreground hover:bg-accent hover:text-destructive hover:border-destructive/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground disabled:hover:border-border transition-all cursor-pointer shadow-sm"
+          title="Clear Conversation"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>Clear Chat</span>
+        </button>
+      </div>
+
+      {/* Main Messages Container */}
+      <div className="w-full max-w-5xl z-10 flex-1 flex flex-col justify-center min-h-0">
+        {messages.length === 0 ? (
+          /* Centered Empty State Container containing Heading + Input */
+          <div className="w-full flex flex-col justify-center items-center space-y-6 my-auto animate-[fadeIn_0.3s_ease-out]">
+            {/* Centered Empty State Heading */}
+            <div className="text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600/10 border border-indigo-500/25 flex items-center justify-center mx-auto text-indigo-500 shadow-md">
+                <Bot className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+                  Spice it up — what do you need?
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Ask {assistantName} anything, search the web, or coordinate local tasks.
+                </p>
+              </div>
+            </div>
+
+            {/* Input Box rendered directly in the center */}
+            <div className="w-full">{renderInputArea()}</div>
+          </div>
+        ) : (
+          /* Dynamic Scrollable Chat Log */
+          <div className="flex flex-col min-h-0 flex-1 justify-end pb-4">
+            <MessageList
+              messages={messages}
+              assistantName={assistantName}
+              isStreaming={isStreaming}
+              isThinking={isThinking}
+              streamingMessage={streamingMessage}
+              onSuggestionClick={setInputText}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Input Area Bottom Dock (only rendered when conversation has messages) */}
+      {messages.length > 0 && (
+        <div className="w-full max-w-5xl z-10 shrink-0">{renderInputArea()}</div>
+      )}
     </div>
   )
 }

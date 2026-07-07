@@ -39,7 +39,7 @@ export const Profile: React.FC<ProfileProps> = ({ userName, assistantName, model
         <div className="space-y-6">
           {/* Card 1: Administrator Avatar details */}
           <div className="p-6 border border-border bg-card/60 backdrop-blur-md rounded-lg flex items-center gap-5">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-primary to-indigo-600 text-primary-foreground flex items-center justify-center font-black text-2xl shadow-md shadow-primary/20">
+            <div className="w-16 h-16 rounded-full bg-linear-to-tr from-primary to-indigo-600 text-primary-foreground flex items-center justify-center font-black text-2xl shadow-md shadow-primary/20">
               {userName.charAt(0).toUpperCase()}
             </div>
             <div>

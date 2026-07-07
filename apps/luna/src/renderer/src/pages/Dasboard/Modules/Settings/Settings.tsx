@@ -72,7 +72,7 @@ export const Settings: React.FC = () => {
         <div className="space-y-6">
           {/* Section 1: System Preferences */}
           <div className="p-6 border border-border bg-card/60 backdrop-blur-md rounded-lg space-y-4">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+            <h3 className="text-xs text-muted-foreground flex items-center gap-2">
               <Power className="w-4 h-4 text-primary" />
               Startup & Memory
             </h3>
@@ -128,7 +128,7 @@ export const Settings: React.FC = () => {
 
           {/* Section 2: Shortcuts & Network */}
           <div className="p-6 border border-border bg-card/60 backdrop-blur-md rounded-lg space-y-4">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+            <h3 className="text-xs text-muted-foreground flex items-center gap-2">
               <Keyboard className="w-4 h-4 text-indigo-500" />
               Execution & Shortcuts
             </h3>

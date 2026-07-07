@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import {
   Copy,
   Link2,
@@ -22,7 +23,6 @@ interface MessageItemProps {
 export const MessageItem: React.FC<MessageItemProps> = ({
   role,
   content,
-  assistantName,
   isThinking = false,
   isStreaming = false,
   onSuggestionClick
@@ -51,7 +51,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   return (
     <div className="flex flex-col items-start w-full text-left space-y-3 animate-[fadeIn_0.2s_ease-out] py-4">
       {/* Content text */}
-      <div className="leading-relaxed text-foreground whitespace-pre-wrap font-medium text-xs sm:text-sm break-words select-text w-full">
+      <div className="leading-relaxed text-foreground font-medium text-xs sm:text-sm wrap-break-word select-text w-full">
         {isThinking ? (
           /* Animated thinking dots */
           <span className="inline-flex items-center gap-1 py-1">
@@ -69,19 +69,51 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             />
           </span>
         ) : content ? (
-          <>
-            {content}
+          <div className="whitespace-normal">
+            <ReactMarkdown
+              components={{
+                p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>,
+                ol: ({ children }) => (
+                  <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
+                ),
+                li: ({ children }) => (
+                  <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
+                ),
+                h1: ({ children }) => (
+                  <h1 className="text-lg font-bold mb-2 text-foreground">{children}</h1>
+                ),
+                h2: ({ children }) => (
+                  <h2 className="text-base font-bold mb-2 text-foreground">{children}</h2>
+                ),
+                h3: ({ children }) => (
+                  <h3 className="text-sm font-bold mb-1 text-foreground">{children}</h3>
+                ),
+                code: ({ children }) => (
+                  <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
+                    {children}
+                  </code>
+                ),
+                pre: ({ children }) => (
+                  <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
+                    {children}
+                  </pre>
+                )
+              }}
+            >
+              {content}
+            </ReactMarkdown>
             {/* Blinking cursor only on the live streaming bubble */}
             {isStreaming && (
               <span className="inline-block w-0.5 h-3.5 bg-foreground/70 ml-0.5 align-middle animate-pulse" />
             )}
-          </>
+          </div>
         ) : (
           <span className="text-muted-foreground/40 animate-pulse font-sans">Thinking...</span>
         )}
       </div>
 
-      {content && (
+      {content && !isStreaming && (
         <div className="space-y-4 w-full">
           {/* Action Toolbar */}
           <div className="flex items-center gap-3 text-muted-foreground/60">
