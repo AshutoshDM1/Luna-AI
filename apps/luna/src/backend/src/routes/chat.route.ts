@@ -1,5 +1,14 @@
 import { Router } from 'express'
 import http from 'http'
+import { prisma } from '../db/db'
+import {
+  getSessions,
+  createSession,
+  updateSessionTitle,
+  deleteSession,
+  getSessionMessages,
+  addMessageToSession
+} from '../controllers/chat/session.controller'
 
 const router = Router()
 
@@ -10,10 +19,20 @@ const ollamaAgent = new http.Agent({
   keepAliveMsecs: 1000
 })
 
+// Session CRUD & History Routes
+router.get('/sessions', getSessions)
+router.post('/sessions', createSession)
+router.put('/sessions/:id', updateSessionTitle)
+router.delete('/sessions/:id', deleteSession)
+router.get('/sessions/:id/messages', getSessionMessages)
+router.post('/sessions/:id/messages', addMessageToSession)
+
 // Chat inference route - proxies streaming from local Ollama to frontend via SSE
 router.post('/', (req, res) => {
-  const { model = 'gemma3:4b', messages = [], systemPrompt = '' } = req.body
-  console.log(`[backend] POST /api/chat model=${model} messages.length=${messages.length}`)
+  const { model = 'gemma3:4b', messages = [], systemPrompt = '', sessionId } = req.body
+  console.log(
+    `[backend] POST /api/chat model=${model} messages.length=${messages.length} sessionId=${sessionId}`
+  )
 
   const ollamaMessages = [...messages]
   if (systemPrompt) {
@@ -44,6 +63,7 @@ router.post('/', (req, res) => {
   }
 
   let requestAborted = false
+  let fullAssistantResponse = ''
 
   const ollamaReq = http.request(options, (ollamaRes) => {
     console.log(`[backend] Ollama response status: ${ollamaRes.statusCode}`)
@@ -67,6 +87,9 @@ router.post('/', (req, res) => {
           }
           const content = parsed.message?.content || ''
           const done = parsed.done || false
+          if (content) {
+            fullAssistantResponse += content
+          }
           if (content || done) {
             res.write(`data: ${JSON.stringify({ content, done })}\n\n`)
           }
@@ -76,20 +99,54 @@ router.post('/', (req, res) => {
       }
     })
 
-    ollamaRes.on('end', () => {
+    ollamaRes.on('end', async () => {
       console.log('[backend] Ollama response stream ended')
       if (requestAborted) return
+
       // Flush any remaining buffer
       if (buffer.trim()) {
         try {
           const parsed = JSON.parse(buffer)
           if (parsed.message?.content) {
+            fullAssistantResponse += parsed.message.content
             res.write(
               `data: ${JSON.stringify({ content: parsed.message.content, done: true })}\n\n`
             )
           }
         } catch (e) {}
       }
+
+      // Save prompt and assistant response to SQLite database
+      if (sessionId && messages.length > 0) {
+        const lastUserMessage = messages[messages.length - 1]
+        if (lastUserMessage && lastUserMessage.role === 'user') {
+          try {
+            await prisma.chatMessage.create({
+              data: {
+                sessionId,
+                role: 'user',
+                content: lastUserMessage.content
+              }
+            })
+            await prisma.chatMessage.create({
+              data: {
+                sessionId,
+                role: 'assistant',
+                content: fullAssistantResponse
+              }
+            })
+            // Update session timestamp
+            await prisma.chatSession.update({
+              where: { id: sessionId },
+              data: { updatedAt: new Date() }
+            })
+            console.log(`[backend] Successfully saved messages in DB for session: ${sessionId}`)
+          } catch (err: any) {
+            console.error('[backend] Error saving messages to DB:', err.message)
+          }
+        }
+      }
+
       if (!res.writableEnded) res.end()
     })
   })

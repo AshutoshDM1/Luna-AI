@@ -1,7 +1,8 @@
-import React from 'react'
-import { LogOut } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { Settings as SettingsIcon } from 'lucide-react'
 import { BrandLogo } from '@/shared/Logos/BrandLogo'
 import { useDashboardNavigation } from '@/hooks/useDashboardNavigation'
+import ApiClient from '@/lib/apiClient'
 
 // Import Modules from nested subfolders
 import Chat from './Modules/Chat/Chat'
@@ -9,12 +10,18 @@ import LocalLlmModels from './Modules/LocalLlmModels/LocalLlmModels'
 import Agents from './Modules/Agents/Agents'
 import Profile from './Modules/Profile/Profile'
 import Settings from './Modules/Settings/Settings'
+import ChatSidebar from './components/ChatSidebar'
+
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
+}
 
 interface DashboardProps {
   onLogout?: () => void
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
+export const Dashboard: React.FC<DashboardProps> = () => {
   const { activeTab, changeTab, menuItems } = useDashboardNavigation('chat')
 
   // Load Setup data for Profile/Chat modules
@@ -36,13 +43,105 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const setupData = getSetupData()
 
+  // User State
+  const [currentUser] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('luna_setup')
+      const userId = localStorage.getItem('luna_user_id')
+      if (saved && userId) {
+        const parsed = JSON.parse(saved)
+        return { id: userId, name: parsed.userName }
+      }
+    } catch (e) {
+      console.error(e)
+    }
+    return null
+  })
+
+  // Chat Session states lifted from Chat.tsx
+  const [sessions, setSessions] = useState<any[]>([])
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [editTitleText, setEditTitleText] = useState('')
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isChatListCollapsed, setIsChatListCollapsed] = useState(false)
+
+  // Fetch recent sessions on mount
+  const fetchSessions = useCallback(async () => {
+    if (!currentUser) return
+    const response = await ApiClient.get<any[]>(`/chat/sessions?userId=${currentUser.id}`)
+    if (response.ok && response.data) {
+      setSessions(response.data)
+      if (response.data.length > 0 && !activeSessionId) {
+        loadSession(response.data[0].id)
+      }
+    }
+  }, [currentUser, activeSessionId])
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchSessions()
+    }
+  }, [currentUser])
+
+  const loadSession = useCallback(async (sessionId: string) => {
+    setActiveSessionId(sessionId)
+    const response = await ApiClient.get<Message[]>(`/chat/sessions/${sessionId}/messages`)
+    if (response.ok && response.data) {
+      setMessages(response.data)
+    }
+  }, [])
+
+  const handleCreateSession = useCallback(async () => {
+    if (!currentUser) return
+    const response = await ApiClient.post<any>('/chat/sessions', {
+      userId: currentUser.id,
+      title: 'New Chat'
+    })
+    if (response.ok && response.data) {
+      setSessions((prev) => [response.data, ...prev])
+      setActiveSessionId(response.data.id)
+      setMessages([])
+    }
+  }, [currentUser])
+
+  const handleRenameSession = useCallback(async (sessionId: string, newTitle: string) => {
+    if (!newTitle.trim()) return
+    const response = await ApiClient.put<any>(`/chat/sessions/${sessionId}`, {
+      title: newTitle
+    })
+    if (response.ok) {
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s)))
+      setEditingSessionId(null)
+    }
+  }, [])
+
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      const response = await ApiClient.delete<any>(`/chat/sessions/${sessionId}`)
+      if (response.ok) {
+        const remaining = sessions.filter((s) => s.id !== sessionId)
+        setSessions(remaining)
+        if (activeSessionId === sessionId) {
+          if (remaining.length > 0) {
+            loadSession(remaining[0].id)
+          } else {
+            setActiveSessionId(null)
+            setMessages([])
+          }
+        }
+      }
+    },
+    [sessions, activeSessionId, loadSession]
+  )
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground transition-colors duration-300">
       {/* 1. Sidebar */}
       <aside className="w-64 border-r border-border bg-card flex flex-col justify-between p-4 shrink-0 transition-colors duration-300">
-        <div className="space-y-6">
+        <div className="space-y-6 flex flex-col h-full min-h-0">
           {/* Logo / Title */}
-          <div className="flex items-center gap-3 px-2 py-1">
+          <div className="flex items-center gap-3 px-2 py-1 shrink-0">
             <BrandLogo size={32} className="rounded-lg shadow-md" />
             <div>
               <h1 className="font-extrabold text-sm tracking-tight">Luna AI</h1>
@@ -51,38 +150,79 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           </div>
 
           {/* Navigation Links */}
-          <nav className="space-y-1">
+          <nav className="space-y-1 overflow-y-auto flex-1 pr-1 select-none min-h-0">
             {menuItems.map((item) => {
               const Icon = item.icon
+              const isChat = item.id === 'chat'
+              const isSelected = activeTab === item.id
+
               return (
-                <button
-                  key={item.id}
-                  onClick={() => changeTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    activeTab === item.id
-                      ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/10'
-                      : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {item.name}
-                </button>
+                <div key={item.id} className="space-y-1">
+                  <button
+                    onClick={() => {
+                      if (isChat && isSelected) {
+                        setIsChatListCollapsed(!isChatListCollapsed)
+                      } else {
+                        changeTab(item.id)
+                        if (isChat) {
+                          setIsChatListCollapsed(false)
+                        }
+                      }
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/10'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon className="w-4 h-4" />
+                      <span>{item.name}</span>
+                    </div>
+                    {isChat && (
+                      <span className="text-[10px] opacity-60">
+                        {isChatListCollapsed ? '▶' : '▼'}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Nested Chat Sessions Folder List */}
+                  {isChat && !isChatListCollapsed && (
+                    <div className="pl-4 pr-1 py-1 space-y-0.5 max-h-60 overflow-y-auto animate-[fadeIn_0.2s_ease-out]">
+                      <ChatSidebar
+                        sessions={sessions}
+                        activeSessionId={activeSessionId}
+                        editingSessionId={editingSessionId}
+                        setEditingSessionId={setEditingSessionId}
+                        editTitleText={editTitleText}
+                        setEditTitleText={setEditTitleText}
+                        loadSession={loadSession}
+                        handleCreateSession={handleCreateSession}
+                        handleRenameSession={handleRenameSession}
+                        handleDeleteSession={handleDeleteSession}
+                        changeTab={changeTab}
+                      />
+                    </div>
+                  )}
+                </div>
               )
             })}
           </nav>
         </div>
 
-        {/* Sidebar Footer (Logout only) */}
-        <div className="space-y-2 border-t border-border pt-4">
-          {onLogout && (
-            <button
-              onClick={onLogout}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold text-destructive hover:bg-destructive/10 transition-all cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Exit Workspace</span>
-            </button>
-          )}
+        {/* Sidebar Footer (Settings button instead of Exit) */}
+        <div className="border-t border-border pt-4 shrink-0">
+          <button
+            onClick={() => changeTab('settings')}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === 'settings'
+                ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/10'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            }`}
+          >
+            <SettingsIcon className="w-4 h-4" />
+            <span>Settings</span>
+          </button>
         </div>
       </aside>
 
@@ -90,7 +230,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       <main className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden relative">
         {/* Content Tabs */}
         {activeTab === 'chat' && (
-          <Chat assistantName={setupData.assistantName} model={setupData.model} />
+          <Chat
+            assistantName={setupData.assistantName}
+            model={setupData.model}
+            activeSessionId={activeSessionId}
+            setActiveSessionId={setActiveSessionId}
+            sessions={sessions}
+            setSessions={setSessions}
+            messages={messages}
+            setMessages={setMessages}
+            loadSession={loadSession}
+            handleCreateSession={handleCreateSession}
+            handleRenameSession={handleRenameSession}
+            handleDeleteSession={handleDeleteSession}
+          />
         )}
 
         {activeTab === 'models' && <LocalLlmModels />}

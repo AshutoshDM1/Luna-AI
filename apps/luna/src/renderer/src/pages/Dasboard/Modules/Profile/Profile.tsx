@@ -46,15 +46,13 @@ export const Profile: React.FC<ProfileProps> = ({ userName, assistantName, model
               <h3 className="font-extrabold text-base tracking-tight text-foreground">
                 {userName}
               </h3>
-              <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mt-0.5">
-                Local System Administrator
-              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Local System Administrator</p>
             </div>
           </div>
 
           {/* Card 2: Configuration parameters */}
           <div className="p-6 border border-border bg-card/60 backdrop-blur-md rounded-lg space-y-4">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+            <h3 className="text-xs font-bold text-muted-foreground flex items-center gap-2">
               <User className="w-4 h-4 text-primary" />
               Instance Details
             </h3>

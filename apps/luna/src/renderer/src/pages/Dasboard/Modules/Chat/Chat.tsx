@@ -11,7 +11,9 @@ import {
   Search,
   Bot,
   Square,
-  Trash2
+  Trash2,
+  Plus,
+  Edit2
 } from 'lucide-react'
 import { MessageList } from './components/MessageList'
 import {
@@ -21,10 +23,21 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import ApiClient from '@/lib/apiClient'
 
 interface ChatProps {
   assistantName: string
   model: string
+  activeSessionId: string | null
+  setActiveSessionId: (id: string | null) => void
+  sessions: any[]
+  setSessions: React.Dispatch<React.SetStateAction<any[]>>
+  messages: Message[]
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>
+  loadSession: (sessionId: string) => Promise<void>
+  handleCreateSession: () => Promise<void>
+  handleRenameSession: (sessionId: string, newTitle: string) => Promise<void>
+  handleDeleteSession: (sessionId: string) => Promise<void>
 }
 
 interface Message {
@@ -32,9 +45,21 @@ interface Message {
   content: string
 }
 
-export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
+export const Chat: React.FC<ChatProps> = ({
+  assistantName,
+  model,
+  activeSessionId,
+  setActiveSessionId,
+  sessions,
+  setSessions,
+  messages,
+  setMessages,
+  loadSession,
+  handleCreateSession,
+  handleRenameSession,
+  handleDeleteSession
+}) => {
   const [inputText, setInputText] = useState('')
-  const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
   const [streamingMessage, setStreamingMessage] = useState('')
@@ -49,27 +74,32 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
     }
   }, [model])
 
-  // Load chat history from localStorage
-  useEffect(() => {
+  const [currentUser] = useState<any>(() => {
     try {
-      const saved = localStorage.getItem('luna_chat_history')
-      if (saved) {
-        setMessages(JSON.parse(saved))
+      const setupStr = localStorage.getItem('luna_setup')
+      const userId = localStorage.getItem('luna_user_id')
+      if (setupStr && userId) {
+        const parsed = JSON.parse(setupStr)
+        return { id: userId, name: parsed.userName }
       }
-    } catch (e) {
-      console.error(e)
+    } catch {
+      return null
     }
-  }, [])
+    return null
+  })
 
-  // Save chat history to localStorage
+  // Save chat history mock helper (just updates local state)
   const saveHistory = (newMsgs: Message[]) => {
     setMessages(newMsgs)
-    localStorage.setItem('luna_chat_history', JSON.stringify(newMsgs))
   }
 
-  const handleClearChat = () => {
+  const handleClearChat = async () => {
     if (confirm('Are you sure you want to clear this conversation?')) {
-      saveHistory([])
+      if (activeSessionId) {
+        await handleDeleteSession(activeSessionId)
+      } else {
+        setMessages([])
+      }
       setStreamingMessage('')
       setIsStreaming(false)
     }
@@ -87,6 +117,22 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
 
     const userMsgText = inputText.trim()
     setInputText('')
+
+    let currentSessionId = activeSessionId
+
+    if (!currentSessionId && currentUser) {
+      const sessResp = await ApiClient.post<any>('/chat/sessions', {
+        userId: currentUser.id,
+        title: userMsgText.split(' ').slice(0, 4).join(' ') || 'New Chat'
+      })
+      if (sessResp.ok && sessResp.data) {
+        currentSessionId = sessResp.data.id
+        setActiveSessionId(currentSessionId)
+        setSessions((prev) => [sessResp.data, ...prev])
+      } else {
+        console.error('Failed to create session in DB')
+      }
+    }
 
     const updatedMessages: Message[] = [...messages, { role: 'user', content: userMsgText }]
     saveHistory(updatedMessages)
@@ -109,7 +155,8 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
         },
         body: JSON.stringify({
           model: selectedModel,
-          messages: updatedMessages
+          messages: updatedMessages,
+          sessionId: currentSessionId
         }),
         signal: abortController.signal
       })
@@ -124,7 +171,6 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
-      // Use a local flag instead of reading stale React state inside the loop
       let thinkingDone = false
       let buffer = ''
 
@@ -134,7 +180,6 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        // Keep the last (potentially incomplete) line in the buffer
         buffer = lines.pop() || ''
 
         for (const line of lines) {
@@ -144,7 +189,6 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
             try {
               const data = JSON.parse(trimmed.slice(6))
               if (data.error) {
-                // Ollama reported an error mid-stream
                 errorMessage = data.error
                 setIsThinking(false)
                 break outer
@@ -163,7 +207,6 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
         }
       }
 
-      // Flush any remaining buffer
       if (buffer.trim()) {
         const trimmed = buffer.trim()
         if (trimmed.startsWith('data: ')) {
@@ -187,43 +230,78 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
       }
 
       if (errorMessage) {
-        // Save the Ollama error as a visible assistant message
-        saveHistory([
+        const finalMsgs: Message[] = [
           ...updatedMessages,
           { role: 'assistant', content: `⚠️ Ollama error: ${errorMessage}` }
-        ])
-      } else if (accumulatedResponse) {
-        saveHistory([...updatedMessages, { role: 'assistant', content: accumulatedResponse }])
-      } else {
-        // Stream ended with no content and no error (model still loading, etc.)
-        saveHistory([
-          ...updatedMessages,
-          {
+        ]
+        saveHistory(finalMsgs)
+        if (currentSessionId) {
+          await ApiClient.post(`/chat/sessions/${currentSessionId}/messages`, {
+            role: 'user',
+            content: userMsgText
+          })
+          await ApiClient.post(`/chat/sessions/${currentSessionId}/messages`, {
             role: 'assistant',
-            content:
-              '⚠️ The model returned an empty response. It may still be loading — try again in a moment.'
-          }
-        ])
+            content: `⚠️ Ollama error: ${errorMessage}`
+          })
+        }
+      } else if (accumulatedResponse) {
+        const finalMsgs: Message[] = [
+          ...updatedMessages,
+          { role: 'assistant', content: accumulatedResponse }
+        ]
+        saveHistory(finalMsgs)
+
+        // If first message, generate and update session title
+        if (messages.length === 0 && currentSessionId) {
+          const firstQueryWords = userMsgText.split(' ').slice(0, 4).join(' ')
+          const generatedTitle = firstQueryWords || 'Untitled Chat'
+          handleRenameSession(currentSessionId, generatedTitle)
+        }
+      } else {
+        const content =
+          '⚠️ The model returned an empty response. It may still be loading — try again in a moment.'
+        const finalMsgs: Message[] = [...updatedMessages, { role: 'assistant', content }]
+        saveHistory(finalMsgs)
+        if (currentSessionId) {
+          await ApiClient.post(`/chat/sessions/${currentSessionId}/messages`, {
+            role: 'user',
+            content: userMsgText
+          })
+          await ApiClient.post(`/chat/sessions/${currentSessionId}/messages`, {
+            role: 'assistant',
+            content
+          })
+        }
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        // User aborted — save whatever was streamed so far
-        if (accumulatedResponse) {
-          saveHistory([
-            ...updatedMessages,
-            { role: 'assistant', content: accumulatedResponse + '\n\n_(generation stopped)_' }
-          ])
+        if (accumulatedResponse && currentSessionId) {
+          const content = accumulatedResponse + '\n\n_(generation stopped)_'
+          saveHistory([...updatedMessages, { role: 'assistant', content }])
+          await ApiClient.post(`/chat/sessions/${currentSessionId}/messages`, {
+            role: 'user',
+            content: userMsgText
+          })
+          await ApiClient.post(`/chat/sessions/${currentSessionId}/messages`, {
+            role: 'assistant',
+            content
+          })
         }
-        // If nothing was streamed yet, remove the pending bubble silently
       } else {
         console.error('Chat fetch error:', err)
-        saveHistory([
-          ...updatedMessages,
-          {
+        const content = `⚠️ Could not reach the inference backend.\n\n**Error:** ${err.message}\n\nMake sure Ollama is running and port 3001 is active.`
+        saveHistory([...updatedMessages, { role: 'assistant', content }])
+        if (currentSessionId) {
+          await ApiClient.post(`/chat/sessions/${currentSessionId}/messages`, {
+            role: 'user',
+            content: userMsgText
+          })
+          await ApiClient.post(`/chat/sessions/${currentSessionId}/messages`, {
             role: 'assistant',
-            content: `⚠️ Could not reach the inference backend.\n\n**Error:** ${err.message}\n\nMake sure Ollama is running and port 3001 is active.`
-          }
-        ])
+            content
+          })
+        }
       }
     } finally {
       setIsStreaming(false)
@@ -430,27 +508,13 @@ export const Chat: React.FC<ChatProps> = ({ assistantName, model }) => {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-background text-foreground transition-colors duration-300 relative justify-between items-center p-6 min-h-0">
+    <div className="flex-1 flex flex-col bg-background text-foreground transition-colors duration-300 relative justify-between items-center p-6 min-h-0 overflow-hidden">
       {/* Background Horizon Glow */}
       <img
         src="/bg.png"
         alt="Glow Horizon"
         className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-5xl pointer-events-none select-none z-0 opacity-20 dark:opacity-40"
       />
-
-      {/* Top Right Clear Chat Button */}
-      <div className="absolute top-6 right-6 z-20">
-        <button
-          type="button"
-          onClick={handleClearChat}
-          disabled={messages.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card/40 backdrop-blur-sm text-[10px] font-semibold text-muted-foreground hover:bg-accent hover:text-destructive hover:border-destructive/30 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground disabled:hover:border-border transition-all cursor-pointer shadow-sm"
-          title="Clear Conversation"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          <span>Clear Chat</span>
-        </button>
-      </div>
 
       {/* Main Messages Container */}
       <div className="w-full max-w-5xl z-10 flex-1 flex flex-col justify-center min-h-0">

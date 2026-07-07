@@ -98,7 +98,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                   <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
                     {children}
                   </pre>
-                )
+                ),
+                hr: () => null
               }}
             >
               {content}

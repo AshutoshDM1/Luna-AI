@@ -13,8 +13,7 @@ export const DASHBOARD_MENU_ITEMS: MenuItem[] = [
   { id: 'chat', name: 'AI Chat', icon: MessageSquare },
   { id: 'models', name: 'Local LLM', icon: Bot },
   { id: 'agents', name: 'AI Agents', icon: Sparkle },
-  { id: 'profile', name: 'Profile', icon: User },
-  { id: 'settings', name: 'Settings', icon: Settings }
+  { id: 'profile', name: 'Profile', icon: User }
 ]
 
 export function useDashboardNavigation(initialTab: DashboardTab = 'chat') {
