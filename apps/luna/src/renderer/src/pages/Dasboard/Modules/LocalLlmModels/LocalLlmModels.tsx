@@ -4,12 +4,23 @@ import { ModelCard, LLMModel } from './Components/ModelCard'
 export const LocalLlmModels: React.FC = () => {
   const [models, setModels] = useState<LLMModel[]>([
     {
+      id: 'gemma3:4b',
+      name: 'Gemma 3 (4B)',
+      developer: 'Google',
+      size: '2.5 GB',
+      params: '4 Billion',
+      status: 'active',
+      useCase:
+        'Primary compact model. Optimally balanced for speed and memory efficiency on consumer machines.',
+      speed: '~62 t/s'
+    },
+    {
       id: 'llama3',
       name: 'Llama 3 (8B Instruct)',
       developer: 'Meta AI',
       size: '4.7 GB',
       params: '8 Billion',
-      status: 'active',
+      status: 'installed',
       useCase:
         'Balanced and fast. Perfect for general assistant tasks, email drafting, and summarization.',
       speed: '~45 t/s'

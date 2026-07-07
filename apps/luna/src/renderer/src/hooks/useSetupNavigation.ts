@@ -17,10 +17,10 @@ export function useSetupNavigation(
 ) {
   const [currentStep, setCurrentStep] = useState(0)
 
-  // Setup Form States
+  // Setup Form States (Default to gemma3:4b)
   const [userName, setUserName] = useState('')
   const [assistantName, setAssistantName] = useState('Luna')
-  const [selectedModel, setSelectedModel] = useState('llama3')
+  const [selectedModel, setSelectedModel] = useState('gemma3:4b')
   const [launchOnStartup, setLaunchOnStartup] = useState(true)
   const [hotkeyEnabled, setHotkeyEnabled] = useState(true)
   const [memoryEnabled, setMemoryEnabled] = useState(true)
@@ -28,7 +28,7 @@ export function useSetupNavigation(
   const [theme, setTheme] = useState('dark')
 
   const nextStep = useCallback(() => {
-    if (currentStep < 2) {
+    if (currentStep < 3) {
       setCurrentStep((prev) => prev + 1)
     } else {
       onComplete({

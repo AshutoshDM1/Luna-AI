@@ -1,0 +1,97 @@
+//ts-ignore
+import { Router } from 'express'
+import { exec, spawn } from 'child_process'
+import { join } from 'path'
+
+const router = Router()
+
+// Helper to get environment PATH appended with standard Ollama install directories
+const getOllamaEnv = (): NodeJS.ProcessEnv => {
+  const paths: string[] = []
+  if (process.platform === 'win32') {
+    paths.push(join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama'))
+    paths.push('C:\\Program Files\\Ollama')
+  } else if (process.platform === 'darwin') {
+    paths.push('/usr/local/bin')
+    paths.push('/opt/homebrew/bin')
+  }
+
+  const separator = process.platform === 'win32' ? ';' : ':'
+  const newPath = process.env.PATH + separator + paths.join(separator)
+
+  return {
+    ...process.env,
+    PATH: newPath
+  }
+}
+
+// 1. Get platform
+router.get('/platform', (_req, res) => {
+  res.json({ platform: process.platform })
+})
+
+// 2. Check if Ollama is installed using terminal CLI check with environment PATH injection
+router.get('/check', (_req, res) => {
+  exec('ollama --version', { env: getOllamaEnv() }, (err) => {
+    if (err) {
+      res.json({ installed: false })
+    } else {
+      res.json({ installed: true })
+    }
+  })
+})
+
+// 3. Install Ollama using terminal commands only
+router.post('/install', async (_req, res) => {
+  if (process.platform === 'win32') {
+    // PowerShell command to run official installation script
+    const psCommand = `powershell -Command "irm https://ollama.com/install.ps1 | iex"`
+
+    exec(psCommand, (err) => {
+      if (err) {
+        console.error('Terminal installation error:', err)
+      }
+    })
+    res.json({ success: true, message: 'Installing Ollama via terminal script. Please wait...' })
+  } else if (process.platform === 'darwin') {
+    exec('open https://ollama.com/download')
+    res.json({ success: true, manual: true, message: 'Opening download link.' })
+  } else {
+    res.status(400).json({ success: false, message: 'Unsupported platform' })
+  }
+})
+
+// 4. Pull Model via SSE spawning terminal process
+router.get('/pull', (req, res) => {
+  const model = req.query.model || 'gemma3:4b'
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.flushHeaders()
+
+  const proc = spawn('ollama', ['pull', String(model)], { env: getOllamaEnv() })
+
+  proc.stdout.on('data', (data) => {
+    res.write(`data: ${JSON.stringify({ status: 'progress', log: data.toString().trim() })}\n\n`)
+  })
+
+  proc.stderr.on('data', (data) => {
+    res.write(`data: ${JSON.stringify({ status: 'progress', log: data.toString().trim() })}\n\n`)
+  })
+
+  proc.on('close', (code) => {
+    if (code === 0) {
+      res.write(`data: ${JSON.stringify({ status: 'success' })}\n\n`)
+    } else {
+      res.write(`data: ${JSON.stringify({ status: 'error', log: `Exited with code ${code}` })}\n\n`)
+    }
+    res.end()
+  })
+
+  req.on('close', () => {
+    proc.kill()
+  })
+})
+
+export default router
