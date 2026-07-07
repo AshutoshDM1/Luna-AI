@@ -9,7 +9,7 @@ interface BrandLogoProps {
 export const BrandLogo: React.FC<BrandLogoProps> = ({
   className = '',
   size = 32,
-  imageSrc = '/icon.png'
+  imageSrc = '/icon.webp'
 }) => {
   if (imageSrc) {
     return (
