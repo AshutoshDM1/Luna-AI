@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { MessageSquare, Cpu, Bot, User, Settings } from 'lucide-react'
+import { MessageSquare, Cpu, Bot, User, Settings, Astroid, Sparkle } from 'lucide-react'
 
 export type DashboardTab = 'chat' | 'models' | 'agents' | 'profile' | 'settings'
 
@@ -11,8 +11,8 @@ export interface MenuItem {
 
 export const DASHBOARD_MENU_ITEMS: MenuItem[] = [
   { id: 'chat', name: 'AI Chat', icon: MessageSquare },
-  { id: 'models', name: 'Local Brains', icon: Cpu },
-  { id: 'agents', name: 'AI Agents', icon: Bot },
+  { id: 'models', name: 'Local LLM', icon: Bot },
+  { id: 'agents', name: 'AI Agents', icon: Sparkle },
   { id: 'profile', name: 'Profile', icon: User },
   { id: 'settings', name: 'Settings', icon: Settings }
 ]
