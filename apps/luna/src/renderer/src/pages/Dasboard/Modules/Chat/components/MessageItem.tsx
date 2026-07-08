@@ -8,10 +8,15 @@ import {
   RotateCcw,
   MoreHorizontal,
   CornerDownRight,
-  Check,
-  Globe
+  Check
 } from 'lucide-react'
 import { TerminalAgent } from '@/Agents/Terminal/Terminal'
+import { WebSearchAgent } from '@/Agents/WebSearch/WebSearch'
+import { OpenAppAgent } from '@/Agents/OpenApp/OpenApp'
+import { MakeNoteAgent } from '@/Agents/MakeNote/MakeNote'
+import { YoutubeSearchAgent } from '@/Agents/YoutubeSearch/YoutubeSearch'
+import { OpenWebsiteAgent } from '@/Agents/OpenWebsite/OpenWebsite'
+import { SetAlarmAgent } from '@/Agents/SetAlarm/SetAlarm'
 
 interface MessageItemProps {
   role: 'user' | 'assistant' | 'system'
@@ -224,83 +229,48 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                       />
                     )
                   } else if (tc.name === 'web_search' && tc.args.query) {
-                    if (result) {
-                      elements.push(
-                        <div
-                          key={`tc-${id || callIndex}`}
-                          className="flex flex-col gap-1.5 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs"
-                        >
-                          <div className="flex items-center gap-2 text-muted-foreground/70">
-                            <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                            <span>
-                              Searched web for{' '}
-                              <span className="text-indigo-300 font-medium">
-                                &ldquo;{tc.args.query}&rdquo;
-                              </span>
-                            </span>
-                          </div>
-                          <div className="pl-5.5 text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap font-sans">
-                            {result.output}
-                          </div>
-                        </div>
-                      )
-                    } else {
-                      elements.push(
-                        <div
-                          key={`tc-${id || callIndex}`}
-                          className="flex items-center gap-2 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs text-muted-foreground/70"
-                        >
-                          <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0 animate-pulse" />
-                          <span>
-                            Searching web for{' '}
-                            <span className="text-indigo-300 font-medium">
-                              &ldquo;{tc.args.query}&rdquo;
-                            </span>
-                            &hellip;
-                          </span>
-                        </div>
-                      )
-                    }
+                    elements.push(
+                      <WebSearchAgent
+                        key={`tc-${id || callIndex}`}
+                        query={tc.args.query}
+                        result={result}
+                      />
+                    )
                   } else if (tc.name === 'open_app' && tc.args.app) {
-                    if (result) {
-                      const success = result.success !== false
-                      elements.push(
-                        <div
-                          key={`tc-${id || callIndex}`}
-                          className="flex flex-col gap-1.5 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs"
-                        >
-                          <div className="flex items-center gap-2 text-muted-foreground/70">
-                            {success ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            ) : (
-                              <Globe className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                            )}
-                            <span>
-                              {success ? 'Opened' : 'Failed to open'}{' '}
-                              <span className="text-indigo-300 font-medium">{tc.args.app}</span>
-                            </span>
-                          </div>
-                          {result.output && (
-                            <div className="pl-5.5 text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap font-sans">
-                              {result.output}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    } else {
-                      elements.push(
-                        <div
-                          key={`tc-${id || callIndex}`}
-                          className="flex items-center gap-2 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs text-muted-foreground/70"
-                        >
-                          <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0 animate-pulse" />
-                          <span>
-                            Opening app{' '}
-                            <span className="text-indigo-300 font-medium">{tc.args.app}</span>...
-                          </span>
-                        </div>
-                      )
-                    }
+                    elements.push(
+                      <OpenAppAgent
+                        key={`tc-${id || callIndex}`}
+                        app={tc.args.app}
+                        result={result}
+                      />
+                    )
+                  } else if (tc.name === 'make_note') {
+                    elements.push(<MakeNoteAgent key={`tc-${id || callIndex}`} result={result} />)
+                  } else if (tc.name === 'youtube_search' && tc.args.query) {
+                    elements.push(
+                      <YoutubeSearchAgent
+                        key={`tc-${id || callIndex}`}
+                        query={tc.args.query}
+                        result={result}
+                      />
+                    )
+                  } else if (tc.name === 'open_website' && tc.args.url) {
+                    elements.push(
+                      <OpenWebsiteAgent
+                        key={`tc-${id || callIndex}`}
+                        url={tc.args.url}
+                        result={result}
+                      />
+                    )
+                  } else if (tc.name === 'set_alarm' && tc.args.time && tc.args.message) {
+                    elements.push(
+                      <SetAlarmAgent
+                        key={`tc-${id || callIndex}`}
+                        time={tc.args.time}
+                        message={tc.args.message}
+                        result={result}
+                      />
+                    )
                   }
                   callIndex++
                 }

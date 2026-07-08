@@ -45,18 +45,18 @@ router.get('/status', async (_req, res) => {
   try {
     const http = await import('http')
     const req = http.get('http://127.0.0.1:11434/', (r) => {
-      res.json({ running: true, statusCode: r.statusCode })
+      if (!res.headersSent) res.json({ running: true, statusCode: r.statusCode })
       r.resume()
     })
     req.setTimeout(2000, () => {
       req.destroy()
-      res.json({ running: false, reason: 'timeout' })
+      if (!res.headersSent) res.json({ running: false, reason: 'timeout' })
     })
     req.on('error', () => {
-      res.json({ running: false, reason: 'connection_refused' })
+      if (!res.headersSent) res.json({ running: false, reason: 'connection_refused' })
     })
   } catch {
-    res.json({ running: false, reason: 'error' })
+    if (!res.headersSent) res.json({ running: false, reason: 'error' })
   }
 })
 
@@ -71,19 +71,21 @@ router.get('/models', async (_req, res) => {
       })
       r.on('end', () => {
         try {
-          res.json(JSON.parse(body))
+          if (!res.headersSent) res.json(JSON.parse(body))
         } catch {
-          res.json({ models: [] })
+          if (!res.headersSent) res.json({ models: [] })
         }
       })
     })
     req.setTimeout(3000, () => {
       req.destroy()
-      res.json({ models: [] })
+      if (!res.headersSent) res.json({ models: [] })
     })
-    req.on('error', () => res.json({ models: [] }))
+    req.on('error', () => {
+      if (!res.headersSent) res.json({ models: [] })
+    })
   } catch {
-    res.json({ models: [] })
+    if (!res.headersSent) res.json({ models: [] })
   }
 })
 

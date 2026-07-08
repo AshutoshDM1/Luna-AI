@@ -3,6 +3,10 @@ import { prisma } from '../../db/db'
 import { webSearch } from '../../skills/web_search'
 import { runTerminalCommand, runTerminalCommands } from '../../skills/terminal'
 import { openApp } from '../../skills/open_app'
+import { makeNote } from '../../skills/make_note'
+import { youtubeSearch } from '../../skills/youtube_search'
+import { openWebsite } from '../../skills/open_website'
+import { setAlarm } from '../../skills/set_alarm'
 import { Ollama, Message, Tool } from 'ollama'
 import os from 'os'
 
@@ -70,6 +74,77 @@ const AGENT_TOOLS: Tool[] = [
         required: ['app']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'make_note',
+      description: 'Create a text note (.txt file) and open it in the default text editor.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'The text content to save in the note' },
+          folder: {
+            type: 'string',
+            description:
+              'Optional folder path to save the note in. Defaults to the user Documents folder.'
+          },
+          filename: {
+            type: 'string',
+            description: 'Optional filename for the note (e.g., meeting_notes.txt)'
+          }
+        },
+        required: ['content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'youtube_search',
+      description: 'Open YouTube in Google Chrome and search for a specific video or topic.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'The search query for YouTube' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'open_website',
+      description:
+        'Open a specific website in Google Chrome by name or full URL (e.g., "github", "google", or "https://example.com").',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'The name of the website or the full URL to open' }
+        },
+        required: ['url']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_alarm',
+      description: 'Set an alarm or reminder for a specific date and time.',
+      parameters: {
+        type: 'object',
+        properties: {
+          time: {
+            type: 'string',
+            description:
+              'The target time for the alarm in ISO 8601 format (e.g., "2023-10-27T15:30:00.000Z")'
+          },
+          message: { type: 'string', description: 'The message or label for the alarm' }
+        },
+        required: ['time', 'message']
+      }
+    }
   }
 ]
 
@@ -102,6 +177,26 @@ async function executeTool(
     if (name === 'open_app' && args.app) {
       const result = await openApp(args.app)
       return { output: result.output, success: result.output.toLowerCase().includes('opened') }
+    }
+
+    if (name === 'make_note' && args.content) {
+      const result = await makeNote(args.content, args.folder, args.filename)
+      return { output: result.output, success: result.success }
+    }
+
+    if (name === 'youtube_search' && args.query) {
+      const result = await youtubeSearch(args.query)
+      return { output: result.output, success: result.success }
+    }
+
+    if (name === 'open_website' && args.url) {
+      const result = await openWebsite(args.url)
+      return { output: result.output, success: result.success }
+    }
+
+    if (name === 'set_alarm' && args.time && args.message) {
+      const result = await setAlarm(args.time, args.message)
+      return { output: result.output, success: result.success }
     }
 
     return { output: `Unknown tool: ${name}`, success: false }
