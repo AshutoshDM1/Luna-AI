@@ -2,71 +2,69 @@ import React, { useState } from 'react'
 import { AgentCard, AgentTool } from './Components/AgentCard'
 
 export const Agents: React.FC = () => {
-  const [tools, setTools] = useState<AgentTool[]>([
+  const tools: AgentTool[] = [
     {
       id: 'notion',
       name: 'Notion Workspace Connector',
       provider: 'Notion MCP Server',
       description:
         'Allows Luna to read, search, update, create, and append blocks/pages inside your personal databases and Notion documentation spaces.',
-      permissionsCount: 22,
+      permissionsCount: 24,
       enabled: true,
       mcpId: 'notion-mcp-server'
     },
     {
-      id: 'github',
-      name: 'GitHub Agent Suite',
-      provider: 'GitHub Developer API',
+      id: 'terminal',
+      name: 'Local System Terminal',
+      provider: 'System Shell',
       description:
-        'Gives the assistant permission to track issues, view pull request telemetry, search commits, and submit file edits natively to repositories.',
-      permissionsCount: 15,
-      enabled: true
-    },
-    {
-      id: 'neon',
-      name: 'Neon Database Serverless',
-      provider: 'Neon MCP Server',
-      description:
-        'Enables real-time serverless Postgres schema comparisons, slow query analyses, SQL sandboxing, and schema fetches.',
-      permissionsCount: 12,
-      enabled: false,
-      mcpId: 'mcp-server-neon'
-    },
-    {
-      id: 'files',
-      name: 'Local System Organizer',
-      provider: 'Operating System Node',
-      description:
-        'Intelligent background file sorter and search pipeline. Accesses Downloads, Documents, and desktop folders safely with authorization.',
-      permissionsCount: 8,
-      enabled: true
-    },
-    {
-      id: 'mochi',
-      name: 'Mochi Telemetry Monitor',
-      provider: 'Mochi Client MCP',
-      description:
-        'Monitors running offline agent background script status, logs performance metrics, and triggers alerts for active server issues.',
+        'Run terminal commands on the local machine. Supports executing multiple commands seamlessly in the same working directory.',
       permissionsCount: 1,
-      enabled: false,
-      mcpId: 'mochi'
+      enabled: true
     },
     {
-      id: 'spotify',
-      name: 'Spotify Controller',
-      provider: 'Spotify System Integration',
+      id: 'web_search',
+      name: 'DuckDuckGo Web Search',
+      provider: 'Web Scraper',
       description:
-        'Grants control over background audio music players. Play, pause, skip, and retrieve currently playing soundtrack details.',
-      permissionsCount: 4,
-      enabled: false
+        'Search the internet using DuckDuckGo to find real-time information, documentation, and answers.',
+      permissionsCount: 1,
+      enabled: true
+    },
+    {
+      id: 'open_app',
+      name: 'Desktop App Launcher',
+      provider: 'System Integration',
+      description:
+        'Launch desktop applications natively on macOS and Windows (e.g., "Google Chrome", "Spotify").',
+      permissionsCount: 1,
+      enabled: true
+    },
+    {
+      id: 'make_note',
+      name: 'Local Note Writer',
+      provider: 'File System',
+      description: 'Create and save notes directly to a local notes folder securely.',
+      permissionsCount: 1,
+      enabled: true
+    },
+    {
+      id: 'youtube_search',
+      name: 'YouTube Browser',
+      provider: 'Google Chrome',
+      description: 'Open YouTube in Chrome and automatically search for specific videos or topics.',
+      permissionsCount: 1,
+      enabled: true
+    },
+    {
+      id: 'open_website',
+      name: 'Web Browser',
+      provider: 'Google Chrome',
+      description: 'Open any specific website in Google Chrome by its name or full URL.',
+      permissionsCount: 1,
+      enabled: true
     }
-  ])
-
-  const handleToggle = (id: string) => {
-    setTools((prev) =>
-      prev.map((tool) => (tool.id === id ? { ...tool, enabled: !tool.enabled } : tool))
-    )
-  }
+  ]
 
   return (
     <div className="flex-1 flex flex-col p-8 sm:p-10 md:p-12 overflow-y-auto bg-background text-foreground transition-colors duration-300 relative">
@@ -93,7 +91,16 @@ export const Agents: React.FC = () => {
         {/* Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {tools.map((tool) => (
-            <AgentCard key={tool.id} tool={tool} onToggle={handleToggle} />
+            <AgentCard
+              key={tool.id}
+              tool={tool}
+              onConfigure={(id) => {
+                if (id === 'notion') {
+                  const event = new CustomEvent('open-settings', { detail: { tab: 'notion' } })
+                  window.dispatchEvent(event)
+                }
+              }}
+            />
           ))}
         </div>
       </div>

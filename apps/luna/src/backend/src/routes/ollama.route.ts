@@ -120,6 +120,8 @@ router.get('/pull', (req, res) => {
 
   const proc = spawn('ollama', ['pull', String(model)], { env: getOllamaEnv(), shell: true })
 
+  let finished = false
+
   proc.stdout.on('data', (data) => {
     res.write(`data: ${JSON.stringify({ status: 'progress', log: data.toString().trim() })}\n\n`)
   })
@@ -129,6 +131,7 @@ router.get('/pull', (req, res) => {
   })
 
   proc.on('close', (code) => {
+    finished = true
     if (code === 0) {
       res.write(`data: ${JSON.stringify({ status: 'success' })}\n\n`)
     } else {
@@ -137,8 +140,13 @@ router.get('/pull', (req, res) => {
     res.end()
   })
 
+  // Only kill the process if it hasn't already finished on its own.
+  // This prevents the client closing the EventSource after a successful pull
+  // from accidentally killing the next model's pull process.
   req.on('close', () => {
-    proc.kill()
+    if (!finished) {
+      proc.kill()
+    }
   })
 })
 

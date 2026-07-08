@@ -15,7 +15,7 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
   const [isInstalling, setIsInstalling] = useState(false)
   const [isPulling, setIsPulling] = useState(false)
   const [downloadPercent, setDownloadPercent] = useState<number | null>(null)
-  const [, setPullProgress] = useState<string>('')
+  const [pullProgress, setPullProgress] = useState<string>('')
   const [pullLogs, setPullLogs] = useState<string[]>([])
 
   useEffect(() => {
@@ -80,64 +80,77 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
     }
   }
 
-  const handlePullModel = () => {
+  const SETUP_MODELS = ['qwen3:4b', 'qwen2.5-vl:3b']
+
+  const pullModel = (modelId: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      setPullLogs([])
+      setDownloadPercent(0)
+
+      const eventSource = new EventSource(`${API_BASE_URL}/ollama/pull?model=${modelId}`)
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          if (data.status === 'progress') {
+            const cleanLog = data.log
+              .replace(
+                /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
+                ''
+              )
+              .trim()
+
+            if (!cleanLog) return
+
+            const percentMatch = cleanLog.match(/(\d+)%/)
+            if (percentMatch) {
+              const percent = parseInt(percentMatch[1], 10)
+              setDownloadPercent(percent)
+            }
+
+            setPullProgress(cleanLog)
+            setPullLogs((prev) => {
+              const next = [...prev]
+              if (next[next.length - 1] !== cleanLog) next.push(cleanLog)
+              return next.slice(-3)
+            })
+          } else if (data.status === 'success') {
+            eventSource.close()
+            setDownloadPercent(100)
+            resolve()
+          } else if (data.status === 'error') {
+            eventSource.close()
+            reject(new Error(data.log))
+          }
+        } catch (e) {
+          console.error(e)
+        }
+      }
+
+      eventSource.onerror = () => {
+        eventSource.close()
+        reject(new Error('Failed to maintain connection to server.'))
+      }
+    })
+  }
+
+  const handlePullModel = async () => {
     setIsPulling(true)
     setPullLogs([])
     setDownloadPercent(0)
-
-    const eventSource = new EventSource(`${API_BASE_URL}/ollama/pull?model=${model}`)
-
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.status === 'progress') {
-          // Clean ANSI escape sequences
-          const cleanLog = data.log
-            .replace(
-              /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
-              ''
-            )
-            .trim()
-
-          if (!cleanLog) return
-
-          // Parse percentage
-          const percentMatch = cleanLog.match(/(\d+)%/)
-          if (percentMatch) {
-            const percent = parseInt(percentMatch[1], 10)
-            setDownloadPercent(percent)
-          }
-
-          setPullProgress(cleanLog)
-
-          setPullLogs((prev) => {
-            const next = [...prev]
-            if (next[next.length - 1] !== cleanLog) {
-              next.push(cleanLog)
-            }
-            return next.slice(-3) // Keep last 3 logs
-          })
-        } else if (data.status === 'success') {
-          eventSource.close()
-          setDownloadPercent(100)
-          setTimeout(() => {
-            onComplete()
-          }, 1000)
-        } else if (data.status === 'error') {
-          eventSource.close()
-          setPullProgress(`Error: ${data.log}`)
-          setIsPulling(false)
-        }
-      } catch (e) {
-        console.error(e)
-      }
-    }
-
-    eventSource.onerror = () => {
-      eventSource.close()
-      setPullProgress('Failed to maintain connection to server.')
+    setPullProgress(`Pulling ${model}...`)
+    try {
+      await pullModel(model)
+    } catch (err: any) {
+      setPullProgress(`Error pulling ${model}: ${err.message}`)
       setIsPulling(false)
+      return
     }
+
+    // All done
+    setTimeout(() => {
+      onComplete()
+    }, 1000)
   }
 
   return (
@@ -223,8 +236,10 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
               {/* Progress bar and percentage */}
               <div className="space-y-2 text-left font-sans">
                 <div className="flex justify-between items-center text-xs font-bold text-foreground">
-                  <span>Downloading Model Brain ({model})...</span>
-                  <span>{downloadPercent !== null ? `${downloadPercent}%` : 'Connecting...'}</span>
+                  <span className="truncate pr-2">{pullProgress || `Downloading...`}</span>
+                  <span className="shrink-0">
+                    {downloadPercent !== null ? `${downloadPercent}%` : 'Connecting...'}
+                  </span>
                 </div>
                 <div className="w-full bg-accent border border-border h-2 rounded-full overflow-hidden">
                   <div

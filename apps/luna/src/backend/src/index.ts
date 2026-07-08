@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import apiRouter from './routes'
+import './mcp/McpManager'
 
 const app = express()
 const port = process.env.PORT || 3001

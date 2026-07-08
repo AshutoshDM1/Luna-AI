@@ -6,7 +6,7 @@ import { openApp } from '../../skills/open_app'
 import { makeNote } from '../../skills/make_note'
 import { youtubeSearch } from '../../skills/youtube_search'
 import { openWebsite } from '../../skills/open_website'
-import { setAlarm } from '../../skills/set_alarm'
+import { mcpManager } from '../../mcp/McpManager'
 import { Ollama, Message, Tool } from 'ollama'
 import os from 'os'
 
@@ -126,25 +126,6 @@ const AGENT_TOOLS: Tool[] = [
         required: ['url']
       }
     }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'set_alarm',
-      description: 'Set an alarm or reminder for a specific date and time.',
-      parameters: {
-        type: 'object',
-        properties: {
-          time: {
-            type: 'string',
-            description:
-              'The target time for the alarm in ISO 8601 format (e.g., "2023-10-27T15:30:00.000Z")'
-          },
-          message: { type: 'string', description: 'The message or label for the alarm' }
-        },
-        required: ['time', 'message']
-      }
-    }
   }
 ]
 
@@ -194,9 +175,8 @@ async function executeTool(
       return { output: result.output, success: result.success }
     }
 
-    if (name === 'set_alarm' && args.time && args.message) {
-      const result = await setAlarm(args.time, args.message)
-      return { output: result.output, success: result.success }
+    if (name.startsWith('mcp_')) {
+      return await mcpManager.executeTool(name, args)
     }
 
     return { output: `Unknown tool: ${name}`, success: false }
@@ -359,10 +339,12 @@ Use native tool calls whenever possible. If you output a text [TOOL_CALL: {...}]
     console.log(`[backend] Agent loop ${loop + 1}, messages: ${conversationMessages.length}`)
 
     // --- Streaming call with native tools ---
+    const allTools = [...AGENT_TOOLS, ...mcpManager.getTools()]
+
     const stream = await ollamaClient.chat({
       model,
       messages: conversationMessages,
-      tools: AGENT_TOOLS,
+      tools: allTools,
       stream: true
     })
 
@@ -449,13 +431,7 @@ Use native tool calls whenever possible. If you output a text [TOOL_CALL: {...}]
 
       conversationMessages.push({
         role: 'tool',
-        content: JSON.stringify({
-          id: tc.id,
-          name: tc.name,
-          ...tc.args,
-          output: toolResult,
-          success
-        })
+        content: toolResult
       })
     }
   }

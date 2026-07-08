@@ -4,24 +4,14 @@ import { api, API_BASE_URL } from '@/services/api'
 
 const CATALOG: Omit<LLMModel, 'status'>[] = [
   {
-    id: 'gemma3:4b',
-    name: 'Gemma 3 4B',
-    developer: 'Google',
-    size: '2.5 GB',
+    id: 'qwen3:4b',
+    name: 'Qwen3 4B',
+    developer: 'Alibaba Group',
+    size: '2.3 GB',
     params: '4 Billion',
     useCase:
-      'Google-optimized compact offline brain. Balanced speed and memory efficiency on consumer machines.',
-    speed: '~62 t/s'
-  },
-  {
-    id: 'llama3.2-vision:11b',
-    name: 'Llama 3.2 Vision (11B)',
-    developer: 'Meta AI',
-    size: '7.9 GB',
-    params: '11 Billion',
-    useCase:
-      "Meta's multimodal vision model. Understands images and text, balanced and powerful for complex tasks.",
-    speed: '~28 t/s'
+      'Default offline brain. Fast, capable text model optimized for reasoning and instruction following.',
+    speed: '~60 t/s'
   },
   {
     id: 'qwen2.5-vl:3b',
@@ -30,7 +20,7 @@ const CATALOG: Omit<LLMModel, 'status'>[] = [
     size: '2.1 GB',
     params: '3 Billion',
     useCase:
-      "Alibaba's vision-language model. Lightweight yet highly capable at reasoning and visual understanding.",
+      'Vision model — understands images and text. Lightweight yet highly capable at reasoning and visual understanding.',
     speed: '~55 t/s'
   }
 ]
@@ -217,7 +207,7 @@ export const LocalLlmModels: React.FC = () => {
         </header>
 
         {/* Model Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
           {models.map((model) => (
             <ModelCard
               key={model.id}

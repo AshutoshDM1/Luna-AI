@@ -16,7 +16,6 @@ import { OpenAppAgent } from '@/Agents/OpenApp/OpenApp'
 import { MakeNoteAgent } from '@/Agents/MakeNote/MakeNote'
 import { YoutubeSearchAgent } from '@/Agents/YoutubeSearch/YoutubeSearch'
 import { OpenWebsiteAgent } from '@/Agents/OpenWebsite/OpenWebsite'
-import { SetAlarmAgent } from '@/Agents/SetAlarm/SetAlarm'
 
 interface MessageItemProps {
   role: 'user' | 'assistant' | 'system'
@@ -259,15 +258,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                       <OpenWebsiteAgent
                         key={`tc-${id || callIndex}`}
                         url={tc.args.url}
-                        result={result}
-                      />
-                    )
-                  } else if (tc.name === 'set_alarm' && tc.args.time && tc.args.message) {
-                    elements.push(
-                      <SetAlarmAgent
-                        key={`tc-${id || callIndex}`}
-                        time={tc.args.time}
-                        message={tc.args.message}
                         result={result}
                       />
                     )

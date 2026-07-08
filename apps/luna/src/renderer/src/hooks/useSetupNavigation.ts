@@ -20,7 +20,7 @@ export function useSetupNavigation(
   // Setup Form States (Default to gemma3:4b)
   const [userName, setUserName] = useState('')
   const [assistantName, setAssistantName] = useState('Luna')
-  const [selectedModel, setSelectedModel] = useState('gemma3:4b')
+  const [selectedModel, setSelectedModel] = useState('qwen3:4b')
   const [launchOnStartup, setLaunchOnStartup] = useState(true)
   const [hotkeyEnabled, setHotkeyEnabled] = useState(true)
   const [memoryEnabled, setMemoryEnabled] = useState(true)

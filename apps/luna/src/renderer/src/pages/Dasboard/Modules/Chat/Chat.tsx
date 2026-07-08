@@ -12,6 +12,7 @@ import {
   ImageIcon
 } from 'lucide-react'
 import { MessageList } from './components/MessageList'
+import { SettingsModal } from '@/components/SettingsModal'
 import {
   Select,
   SelectContent,
@@ -61,6 +62,8 @@ export const Chat: React.FC<ChatProps> = ({
   const [selectedModel, setSelectedModel] = useState(model || 'gemma3:4b')
   const [chatMode] = useState<'agent' | 'ask'>('agent')
   const [isExecutingCommand, setIsExecutingCommand] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'integrations' | 'skills'>('integrations')
   const abortControllerRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   // Always-fresh ref to messages — avoids stale closure in async callbacks
@@ -736,10 +739,17 @@ export const Chat: React.FC<ChatProps> = ({
 
             {/* Integration Bar - inside the card at the bottom */}
             <div className="flex items-center justify-between pt-2 border-t border-border/40">
-              <div className="flex items-center gap-1.5 text-[11px] ">
+              <button
+                type="button"
+                onClick={() => {
+                  setSettingsTab('skills')
+                  setSettingsOpen(true)
+                }}
+                className="flex items-center gap-1.5 text-[11px] hover:text-foreground transition-colors cursor-pointer"
+              >
                 <Sparkles className="size-3.5 text-indigo-400 fill-current" />
-                <span>Connect apps</span>
-              </div>
+                <span>Skills & Apps Config</span>
+              </button>
               <div className="flex items-center gap-3">
                 {/* GitHub */}
                 <button
@@ -753,6 +763,10 @@ export const Chat: React.FC<ChatProps> = ({
                 <button
                   type="button"
                   title="Notion"
+                  onClick={() => {
+                    setSettingsTab('integrations')
+                    setSettingsOpen(true)
+                  }}
                   className="transition-all hover:scale-110 cursor-pointer"
                 >
                   <NotionIcon size={15} />
@@ -839,6 +853,9 @@ export const Chat: React.FC<ChatProps> = ({
       {messages.length > 0 && (
         <div className="w-full max-w-5xl z-10 shrink-0">{renderInputArea()}</div>
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} defaultTab={settingsTab} />
     </div>
   )
 }

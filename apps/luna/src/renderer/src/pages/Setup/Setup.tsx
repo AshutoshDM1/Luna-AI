@@ -24,19 +24,14 @@ interface SetupProps {
 
 const MODELS = [
   {
-    id: 'gemma3:4b',
-    name: 'Gemma 3 4B',
-    description: 'Google-optimized compact offline brain'
-  },
-  {
-    id: 'llama3.2-vision:11b',
-    name: 'Llama 3.2 Vision (11B)',
-    description: "Meta's multimodal vision model, balanced and powerful"
+    id: 'qwen3:4b',
+    name: 'Qwen3 4B',
+    description: 'Default offline brain — fast, capable text model'
   },
   {
     id: 'qwen2.5-vl:3b',
     name: 'Qwen 2.5 VL (3B)',
-    description: "Alibaba's vision-language model, highly capable for reasoning"
+    description: 'Vision model — understands images and text'
   }
 ]
 
