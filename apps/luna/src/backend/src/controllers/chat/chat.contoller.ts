@@ -7,6 +7,12 @@ import { makeNote } from '../../skills/make_note'
 import { youtubeSearch } from '../../skills/youtube_search'
 import { openWebsite } from '../../skills/open_website'
 import { mcpManager } from '../../mcp/McpManager'
+import {
+  writeMemory,
+  readMemories,
+  searchMemories,
+  getTopMemoriesSummary
+} from '../../skills/memory'
 import { Ollama, Message, Tool } from 'ollama'
 import os from 'os'
 
@@ -126,6 +132,73 @@ const AGENT_TOOLS: Tool[] = [
         required: ['url']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_memory',
+      description:
+        'Save something to long-term memory. Use this when the user explicitly asks you to remember something, or when you encounter important personal info (name, preferences, goals, key facts) worth retaining across conversations.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: {
+            type: 'string',
+            description: 'The information to remember. Be concise and factual.'
+          },
+          tags: {
+            type: 'string',
+            description:
+              'Optional comma-separated tags to categorise the memory, e.g. "preference,ui" or "user,name"'
+          },
+          importance: {
+            type: 'number',
+            description:
+              'How important is this memory? 1 = trivial, 3 = normal, 5 = critical. Default 3.'
+          }
+        },
+        required: ['content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_memory',
+      description:
+        'Read all memories stored so far, sorted by importance. Use when the user asks what you remember, or wants a full recall.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: {
+            type: 'number',
+            description: 'Maximum number of memories to return. Default 50.'
+          }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_memory',
+      description:
+        'Search your memory by keyword to find specific stored information. Use when the user asks if you remember something specific.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The keyword or phrase to search for in memory'
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of results to return. Default 10.'
+          }
+        },
+        required: ['query']
+      }
+    }
   }
 ]
 
@@ -172,6 +245,25 @@ async function executeTool(
 
     if (name === 'open_website' && args.url) {
       const result = await openWebsite(args.url)
+      return { output: result.output, success: result.success }
+    }
+
+    if (name === 'write_memory' && args.content) {
+      const result = await writeMemory(args.content, {
+        tags: args.tags,
+        importance: args.importance,
+        source: 'agent'
+      })
+      return { output: result.output, success: result.success }
+    }
+
+    if (name === 'read_memory') {
+      const result = await readMemories(args.limit)
+      return { output: result.output, success: result.success }
+    }
+
+    if (name === 'search_memory' && args.query) {
+      const result = await searchMemories(args.query, args.limit)
       return { output: result.output, success: result.success }
     }
 
@@ -319,7 +411,10 @@ async function runAgentLoop(
   const username = os.userInfo().username
   const effectiveSessionId = sessionId || generateId()
 
-  const systemContent = `You are Luna, an intelligent AI agent on Windows 11. You have access to tools. Use them when the user needs something done on their computer or needs real-time information.
+  // Load top memories to give the AI passive context awareness
+  const memorySummary = await getTopMemoriesSummary(10)
+
+  const systemContent = `You are Luna, an intelligent AI agent on Windows 11. You have access to native tools. 
 
 SYSTEM:
 - Date/Time: ${new Date().toString()}
@@ -328,7 +423,19 @@ SYSTEM:
 - Downloads: ${homeDir}\\Downloads
 - Desktop: ${homeDir}\\Desktop
 
-Use native tool calls whenever possible. If you output a text [TOOL_CALL: {...}] tag, the backend will execute it. Do not claim an app is missing unless the tool result says it could not be found.`
+MEMORY & TOOL CALLING INSTRUCTIONS:
+- If native tool calling fails or you want to be sure a tool runs, you can output a text tag in your response:
+  [TOOL_CALL: {"name": "write_memory", "content": "text to remember", "tags": "optional,tags", "importance": 3}]
+  [TOOL_CALL: {"name": "search_memory", "query": "search term"}]
+  [TOOL_CALL: {"name": "read_memory"}]
+  The backend will automatically execute these tags and feed the results back to you.
+
+- Whenever the user tells you to remember something, or tells you a personal fact, preference, habit, or name, you MUST execute the "write_memory" tool (either natively or via the [TOOL_CALL: ...] text tag) immediately. Do not just say you noted it.
+- Whenever the user asks you to recall something, asks "do you know...", asks "what do you remember about me...", or asks a question about their preferences/location/info, you MUST first run "search_memory" or "read_memory" to retrieve the information before responding.
+- Passive memory context already loaded:
+${memorySummary || '(No memories stored yet)'}
+
+Use native tool calls or the [TOOL_CALL: ...] text tag format. If you output a text [TOOL_CALL: {...}] tag, the backend will execute it. Do not claim an app is missing unless the tool result says it could not be found.`
 
   const conversationMessages = buildConversationMessages(systemContent, originalMessages)
 
@@ -339,12 +446,26 @@ Use native tool calls whenever possible. If you output a text [TOOL_CALL: {...}]
     console.log(`[backend] Agent loop ${loop + 1}, messages: ${conversationMessages.length}`)
 
     // --- Streaming call with native tools ---
-    const allTools = [...AGENT_TOOLS, ...mcpManager.getTools()]
+    // Small local models (like qwen3:4b) fail or ignore tools when 30+ tools are loaded at once.
+    // We always load our core native skills, and dynamically load MCP Notion tools only if the user is asking about Notion.
+    const userQuery = originalMessages
+      .map((m) => String(m.content || ''))
+      .join(' ')
+      .toLowerCase()
+    const needsNotion =
+      userQuery.includes('notion') ||
+      userQuery.includes('page') ||
+      userQuery.includes('database') ||
+      userQuery.includes('block') ||
+      userQuery.includes('comment')
+
+    const mcpTools = needsNotion ? mcpManager.getTools() : []
+    const allTools = [...AGENT_TOOLS, ...mcpTools]
 
     const stream = await ollamaClient.chat({
       model,
       messages: conversationMessages,
-      tools: allTools,
+      tools: allTools.length > 0 ? allTools : undefined,
       stream: true
     })
 
@@ -397,21 +518,18 @@ Use native tool calls whenever possible. If you output a text [TOOL_CALL: {...}]
       break
     }
 
-    // --- Build Ollama assistant message with tool_calls ---
-    const ollamaAssistantMsg: Message = {
+    // --- Append the assistant turn (text only; tool_calls are tracked separately) ---
+    conversationMessages.push({
       role: 'assistant',
-      content: textContent,
-      tool_calls: nativeToolCalls.map((tc) => ({
-        id: tc.id,
-        function: {
-          name: tc.name,
-          arguments: tc.args
-        }
-      }))
-    }
-    conversationMessages.push(ollamaAssistantMsg)
+      content: textContent || ''
+    })
 
-    // --- Execute tool calls sequentially (terminal shares CWD) ---
+    // --- Execute tool calls and inject results as a single user message ---
+    // Small models (qwen3:4b, llama3.2) don't reliably correlate role:'tool' messages back
+    // to their calls. Injecting results as a user message is universally understood and
+    // prevents the model from seeing an "unanswered" tool call and repeating it in a loop.
+    const toolResultParts: string[] = []
+
     for (const tc of nativeToolCalls) {
       if (abortSignal.aborted) break
 
@@ -425,15 +543,18 @@ Use native tool calls whenever possible. If you output a text [TOOL_CALL: {...}]
         effectiveSessionId
       )
 
-      const resultBlock = `[TOOL_RESULT: ${JSON.stringify({ id: tc.id, name: tc.name, ...tc.args, output: toolResult, success })}]\n`
+      const resultBlock = `[TOOL_RESULT: ${JSON.stringify({ id: tc.id, name: tc.name, output: toolResult, success })}]\n`
       fullAssistantResponse += resultBlock
       res.write(`data: ${JSON.stringify({ content: resultBlock, done: false })}\n\n`)
 
-      conversationMessages.push({
-        role: 'tool',
-        content: toolResult
-      })
+      toolResultParts.push(`Tool "${tc.name}" returned:\n${toolResult}`)
     }
+
+    // Single user message with all tool results — model will now generate its final answer
+    conversationMessages.push({
+      role: 'user',
+      content: toolResultParts.join('\n\n')
+    })
   }
 
   await saveMessageToDb(sessionId, originalMessages, fullAssistantResponse)

@@ -35,3 +35,13 @@ model ChatMessage {
   content   String
   createdAt DateTime    @default(now())
 }
+
+model Memory {
+  id         String   @id @default(uuid())
+  content    String
+  tags       String   @default("")
+  importance Int      @default(3)
+  source     String   @default("user")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
