@@ -16,6 +16,7 @@ import { OpenAppAgent } from '@/Agents/OpenApp/OpenApp'
 import { MakeNoteAgent } from '@/Agents/MakeNote/MakeNote'
 import { YoutubeSearchAgent } from '@/Agents/YoutubeSearch/YoutubeSearch'
 import { OpenWebsiteAgent } from '@/Agents/OpenWebsite/OpenWebsite'
+import { MemoryAgent } from '@/Agents/Memory/Memory'
 
 interface MessageItemProps {
   role: 'user' | 'assistant' | 'system'
@@ -90,8 +91,25 @@ function parseToolCallsFromContent(content: string): {
     } catch {}
   }
 
+  // Prevent incomplete tags at the end of the stream from flashing raw text to the user
+  let cleanContent = content
+  const incompleteCallIndex = cleanContent.lastIndexOf('[TOOL_CALL:')
+  if (incompleteCallIndex !== -1) {
+    const remaining = cleanContent.slice(incompleteCallIndex)
+    if (!remaining.includes(']')) {
+      cleanContent = cleanContent.slice(0, incompleteCallIndex)
+    }
+  }
+  const incompleteResultIndex = cleanContent.lastIndexOf('[TOOL_RESULT:')
+  if (incompleteResultIndex !== -1) {
+    const remaining = cleanContent.slice(incompleteResultIndex)
+    if (!remaining.includes(']')) {
+      cleanContent = cleanContent.slice(0, incompleteResultIndex)
+    }
+  }
+
   // Split content into text segments (between tool blocks)
-  const textSegments = content
+  const textSegments = cleanContent
     .split(
       /\[TOOL_CALL:\s*\{.+?\}\]\s*\[TOOL_RESULT:\s*\{.+?\}\]|\[TOOL_CALL:\s*\{.+?\}\]|\[TOOL_RESULT:\s*\{.+?\}\]/gs
     )
@@ -181,20 +199,23 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     <div className="flex flex-col items-start w-full text-left space-y-3 animate-[fadeIn_0.2s_ease-out] py-4">
       <div className="leading-relaxed text-foreground font-medium text-xs sm:text-sm wrap-break-word select-text w-full">
         {isThinking ? (
-          <span className="inline-flex items-center gap-1 py-1">
-            <span
-              className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce"
-              style={{ animationDelay: '0ms' }}
-            />
-            <span
-              className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce"
-              style={{ animationDelay: '150ms' }}
-            />
-            <span
-              className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce"
-              style={{ animationDelay: '300ms' }}
-            />
-          </span>
+          <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground/70 animate-pulse">
+            <span className="inline-flex items-center gap-1">
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+                style={{ animationDelay: '0ms' }}
+              />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+                style={{ animationDelay: '150ms' }}
+              />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+                style={{ animationDelay: '300ms' }}
+              />
+            </span>
+            <span className="font-medium">Thinking...</span>
+          </div>
         ) : (
           <div>
             {(() => {
@@ -261,6 +282,28 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                         result={result}
                       />
                     )
+                  } else if (tc.name === 'write_memory') {
+                    elements.push(
+                      <MemoryAgent
+                        key={`tc-${id || callIndex}`}
+                        action="write"
+                        content={tc.args.content}
+                        result={result}
+                      />
+                    )
+                  } else if (tc.name === 'read_memory') {
+                    elements.push(
+                      <MemoryAgent key={`tc-${id || callIndex}`} action="read" result={result} />
+                    )
+                  } else if (tc.name === 'search_memory') {
+                    elements.push(
+                      <MemoryAgent
+                        key={`tc-${id || callIndex}`}
+                        action="search"
+                        query={tc.args.query}
+                        result={result}
+                      />
+                    )
                   }
                   callIndex++
                 }
@@ -309,7 +352,23 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               return <ReactMarkdown components={MARKDOWN_COMPONENTS}>{content}</ReactMarkdown>
             })()}
             {isStreaming && (
-              <span className="inline-block w-0.5 h-3.5 bg-foreground/70 ml-0.5 align-middle animate-pulse" />
+              <div className="flex items-center gap-2 mt-2 py-1 text-xs text-muted-foreground/70 animate-pulse">
+                <span className="inline-flex items-center gap-1">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+                    style={{ animationDelay: '0ms' }}
+                  />
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  />
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce"
+                    style={{ animationDelay: '300ms' }}
+                  />
+                </span>
+                <span className="font-medium">Thinking...</span>
+              </div>
             )}
           </div>
         )}

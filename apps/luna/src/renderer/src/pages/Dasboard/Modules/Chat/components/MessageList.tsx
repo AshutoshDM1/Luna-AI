@@ -60,12 +60,9 @@ export const MessageList: React.FC<MessageListProps> = ({
       {isStreaming && (
         <MessageItem
           role="assistant"
-          // While streaming, if the model is outputting a tool call, show a neutral
-          // placeholder so the raw [TOOL_CALL:...] JSON doesn't flash to the user.
-          // The final TerminalAgent card renders once the message is committed.
-          content={streamingMessage.includes('[TOOL_CALL:') ? '' : streamingMessage}
+          content={streamingMessage}
           assistantName={assistantName}
-          isThinking={isThinking || streamingMessage.includes('[TOOL_CALL:')}
+          isThinking={isThinking}
           isStreaming={true}
           onSuggestionClick={onSuggestionClick}
           isExecutingCommand={isExecutingCommand}

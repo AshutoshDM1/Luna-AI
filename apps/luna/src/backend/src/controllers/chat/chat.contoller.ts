@@ -471,6 +471,7 @@ Use native tool calls or the [TOOL_CALL: ...] text tag format. If you output a t
 
     let textContent = ''
     const nativeToolCalls: { name: string; args: Record<string, any>; id: string }[] = []
+    const rawToolCalls: any[] = []
 
     for await (const chunk of stream) {
       if (abortSignal.aborted) break
@@ -482,6 +483,7 @@ Use native tool calls or the [TOOL_CALL: ...] text tag format. If you output a t
 
       if (chunk.message?.tool_calls) {
         for (const tc of chunk.message.tool_calls) {
+          rawToolCalls.push(tc)
           nativeToolCalls.push({
             name: tc.function.name,
             args: (tc.function.arguments || {}) as Record<string, any>,
@@ -518,11 +520,12 @@ Use native tool calls or the [TOOL_CALL: ...] text tag format. If you output a t
       break
     }
 
-    // --- Append the assistant turn (text only; tool_calls are tracked separately) ---
+    // --- Append the assistant turn (with tool_calls to prevent repetitive calls) ---
     conversationMessages.push({
       role: 'assistant',
-      content: textContent || ''
-    })
+      content: textContent || '',
+      tool_calls: rawToolCalls.length > 0 ? rawToolCalls : undefined
+    } as any)
 
     // --- Execute tool calls and inject results as a single user message ---
     // Small models (qwen3:4b, llama3.2) don't reliably correlate role:'tool' messages back
@@ -533,19 +536,24 @@ Use native tool calls or the [TOOL_CALL: ...] text tag format. If you output a t
     for (const tc of nativeToolCalls) {
       if (abortSignal.aborted) break
 
+      // 1. Immediately stream the TOOL_CALL block so the UI shows the loader
       const callBlock = `[TOOL_CALL: ${JSON.stringify({ id: tc.id, name: tc.name, ...tc.args })}]\n`
       fullAssistantResponse += callBlock
       res.write(`data: ${JSON.stringify({ content: callBlock, done: false })}\n\n`)
+      if (res.flush) res.flush() // Force immediate flush to network
 
+      // 2. Execute the tool in the background
       const { output: toolResult, success } = await executeTool(
         tc.name,
         tc.args,
         effectiveSessionId
       )
 
+      // 3. Immediately stream the TOOL_RESULT block to replace the loader with results
       const resultBlock = `[TOOL_RESULT: ${JSON.stringify({ id: tc.id, name: tc.name, output: toolResult, success })}]\n`
       fullAssistantResponse += resultBlock
       res.write(`data: ${JSON.stringify({ content: resultBlock, done: false })}\n\n`)
+      if (res.flush) res.flush()
 
       toolResultParts.push(`Tool "${tc.name}" returned:\n${toolResult}`)
     }
