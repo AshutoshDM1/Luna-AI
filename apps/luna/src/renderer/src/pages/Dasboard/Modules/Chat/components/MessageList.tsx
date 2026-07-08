@@ -36,7 +36,7 @@ export const MessageList: React.FC<MessageListProps> = ({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamingMessage])
+  }, [messages.length])
 
   return (
     <div className="flex-1 w-full overflow-y-auto space-y-4 px-1 py-2 min-h-[30vh]">

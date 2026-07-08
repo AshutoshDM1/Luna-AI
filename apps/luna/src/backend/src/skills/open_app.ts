@@ -169,7 +169,7 @@ function Is-BadExecutable([string]$path) {
 function Try-OpenPath([string]$path, [string]$label) {
   if ($path -and (Test-Path -LiteralPath $path) -and -not (Is-BadExecutable $path)) {
     Start-Process -FilePath $path
-    Write-Output "Opened $label: $path"
+    Write-Output "Opened \${label}: \${path}"
     exit 0
   }
 }

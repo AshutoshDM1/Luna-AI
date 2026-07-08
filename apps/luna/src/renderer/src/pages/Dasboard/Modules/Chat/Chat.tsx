@@ -60,7 +60,9 @@ export const Chat: React.FC<ChatProps> = ({
   const [isThinking, setIsThinking] = useState(false)
   const [streamingMessage, setStreamingMessage] = useState('')
   const [selectedModel, setSelectedModel] = useState(model || 'gemma3:4b')
-  const [chatMode] = useState<'agent' | 'ask'>('agent')
+  const [chatMode, setChatMode] = useState<'agent' | 'ask'>(() => {
+    return (localStorage.getItem('luna_chat_mode') as 'agent' | 'ask') || 'agent'
+  })
   const [isExecutingCommand, setIsExecutingCommand] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<'integrations' | 'skills'>('integrations')
@@ -77,6 +79,7 @@ export const Chat: React.FC<ChatProps> = ({
     name: string
     type: string
     dataUrl: string // base64 data URL for images, text content for txt files
+    path?: string
   }
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
 
@@ -151,6 +154,8 @@ export const Chat: React.FC<ChatProps> = ({
     const files = Array.from(e.target.files ?? [])
     for (const file of files) {
       const isImage = file.type.startsWith('image/')
+      const filePath = (file as any).path || ''
+
       if (isImage && !supportsVision(selectedModel)) {
         alert(
           `${selectedModel} does not support vision/images. Please select a vision model (e.g. Llama 3.2 Vision or Qwen 2.5 VL) to attach images.`
@@ -158,24 +163,46 @@ export const Chat: React.FC<ChatProps> = ({
         continue
       }
 
-      const reader = new FileReader()
       if (isImage) {
+        const reader = new FileReader()
         reader.onload = () => {
-          setAttachedFiles((prev) => [
-            ...prev,
-            { name: file.name, type: file.type, dataUrl: reader.result as string }
-          ])
+          const img = new Image()
+          img.onload = () => {
+            const MAX_DIM = 800
+            let width = img.width
+            let height = img.height
+            if (width > MAX_DIM || height > MAX_DIM) {
+              if (width > height) {
+                height = Math.round((height * MAX_DIM) / width)
+                width = MAX_DIM
+              } else {
+                width = Math.round((width * MAX_DIM) / height)
+                height = MAX_DIM
+              }
+            }
+            const canvas = document.createElement('canvas')
+            canvas.width = width
+            canvas.height = height
+            const ctx = canvas.getContext('2d')
+            ctx?.drawImage(img, 0, 0, width, height)
+            const resizedBase64 = canvas.toDataURL(file.type)
+            setAttachedFiles((prev) => [
+              ...prev,
+              { name: file.name, type: file.type, dataUrl: resizedBase64, path: filePath }
+            ])
+          }
+          img.src = reader.result as string
         }
         reader.readAsDataURL(file)
       } else {
-        // text / other — read as text
+        const reader = new FileReader()
         reader.onload = () => {
           setAttachedFiles((prev) => [
             ...prev,
-            { name: file.name, type: file.type, dataUrl: reader.result as string }
+            { name: file.name, type: file.type, dataUrl: reader.result as string, path: filePath }
           ])
         }
-        reader.readAsText(file)
+        reader.readAsDataURL(file)
       }
     }
     // Reset so same file can be re-selected
@@ -356,13 +383,13 @@ export const Chat: React.FC<ChatProps> = ({
       .filter((file) => file.type.startsWith('image/'))
       .map((file) => file.dataUrl)
 
-    const textFiles = attachedFiles.filter((file) => !file.type.startsWith('image/'))
+    const otherFiles = attachedFiles.filter((file) => !file.type.startsWith('image/'))
+    const filePaths = otherFiles.map((file) => file.path).filter(Boolean)
+
     let userMsgText = inputText.trim()
-    if (textFiles.length > 0) {
-      const fileContentsSection = textFiles
-        .map((file) => `\n\n### Attached File: ${file.name}\n\`\`\`\n${file.dataUrl}\n\`\`\``)
-        .join('')
-      userMsgText += fileContentsSection
+    if (otherFiles.length > 0) {
+      const attachmentsLabel = otherFiles.map((f) => `📎 [Attached File: ${f.name}]`).join('\n')
+      userMsgText += `\n\n${attachmentsLabel}`
     }
 
     setInputText('')
@@ -409,7 +436,9 @@ export const Chat: React.FC<ChatProps> = ({
         model: selectedModel,
         messages: updatedMessages,
         sessionId: currentSessionId,
-        mode: chatMode
+        mode: chatMode,
+        filePaths: filePaths,
+        attachedFiles: otherFiles.map((f) => ({ name: f.name, type: f.type, dataUrl: f.dataUrl }))
       }
 
       const response = await fetch(`${API_BASE_URL}/chat`, {
@@ -658,11 +687,24 @@ export const Chat: React.FC<ChatProps> = ({
                   <Paperclip className="w-4.5 h-4.5" />
                 </button>
 
-                {/* Chat Mode Status (Always Agent) */}
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/25 text-green-400 font-semibold text-[10px] select-none shadow-sm">
+                {/* Chat Mode Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newMode = chatMode === 'agent' ? 'ask' : 'agent'
+                    setChatMode(newMode)
+                    localStorage.setItem('luna_chat_mode', newMode)
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full border transition-all cursor-pointer font-semibold text-[10px] shadow-sm select-none ${
+                    chatMode === 'agent'
+                      ? 'bg-green-500/10 border-green-500/25 text-green-400 hover:bg-green-500/20'
+                      : 'bg-indigo-500/10 border-indigo-500/25 text-indigo-400 hover:bg-indigo-500/20'
+                  }`}
+                  title="Click to switch between Agent Mode (with tools) and Ask Mode (simple chat)"
+                >
                   <Bot className="w-3.5 h-3.5" />
-                  <span>Agent Mode</span>
-                </div>
+                  <span>{chatMode === 'agent' ? 'Agent Mode' : 'Ask Mode'}</span>
+                </button>
                 {/* Research Button */}
                 <button
                   type="button"
@@ -777,7 +819,7 @@ export const Chat: React.FC<ChatProps> = ({
                   title="Gmail"
                   className="transition-all hover:scale-110 cursor-pointer"
                 >
-                  <GmailIcon size={15} />
+                  <img src="/gmail.png" alt="Gmail" className="w-[15px] h-[15px] object-contain" />
                 </button>
               </div>
             </div>

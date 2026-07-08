@@ -15,10 +15,11 @@ import {
 } from '../../skills/memory'
 import { Ollama, Message, Tool } from 'ollama'
 import os from 'os'
+import { decodeFile, decodeBuffer } from '../../utils/fileDecoder'
 
 const ollamaClient = new Ollama({ host: 'http://127.0.0.1:11434' })
 
-const MAX_CONTEXT_MESSAGES = 40
+const MAX_CONTEXT_MESSAGES = 15
 const MAX_LOOPS = 8
 
 function generateId(): string {
@@ -298,10 +299,12 @@ function parseTaggedToolCall(content: string): { name: string; args: Record<stri
 
 function buildConversationMessages(systemContent: string, originalMessages: any[]): Message[] {
   const mapped: Message[] = originalMessages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
     .map((m) => ({
-      role: m.role as 'user' | 'assistant',
+      role: m.role as 'user' | 'assistant' | 'tool',
       content: String(m.content || ''),
+      ...(m.tool_calls ? { tool_calls: m.tool_calls } : {}),
+      ...(m.tool_name ? { tool_name: m.tool_name } : {}),
       ...(m.images?.length
         ? {
             images: m.images.map((img: string) =>
@@ -324,9 +327,31 @@ function buildConversationMessages(systemContent: string, originalMessages: any[
 
 // --- Request Handler ---
 export const handleChatRequest = async (req: Request, res: Response) => {
-  const { model = 'qwen3:4b', messages = [], sessionId, mode } = req.body
+  const {
+    model = 'qwen3:4b',
+    messages = [],
+    sessionId,
+    mode,
+    activeSkills,
+    filePaths = [],
+    attachedFiles = []
+  } = req.body
+  // Default list of active skills for testing (user can adjust this)
+  const defaultSkills = [
+    'open_app',
+    'terminal',
+    'web_search',
+    'make_note',
+    'youtube_search',
+    'open_website',
+    'write_memory',
+    'read_memory',
+    'search_memory'
+  ]
+  const skillsToUse = Array.isArray(activeSkills) ? activeSkills : defaultSkills
+
   console.log(
-    `[backend] POST /api/chat model=${model} messages.length=${messages.length} sessionId=${sessionId} mode=${mode}`
+    `[backend] POST /api/chat model=${model} messages.length=${messages.length} sessionId=${sessionId} mode=${mode} activeSkills=${JSON.stringify(skillsToUse)} filePaths=${JSON.stringify(filePaths)} attachedFiles.length=${attachedFiles ? attachedFiles.length : 0}`
   )
 
   res.setHeader('Content-Type', 'text/event-stream')
@@ -340,17 +365,68 @@ export const handleChatRequest = async (req: Request, res: Response) => {
   })
 
   try {
+    let processedMessages = [...messages]
+    let fileContexts = ''
+
+    if (filePaths && filePaths.length > 0) {
+      for (const path of filePaths) {
+        try {
+          const content = await decodeFile(path)
+          fileContexts += `\n\n### Content of file: ${path.split(/[\\/]/).pop()}\n${content}\n`
+        } catch (err: any) {
+          console.error(`[backend] Failed to decode file ${path}:`, err.message)
+          fileContexts += `\n\n### Content of file: ${path.split(/[\\/]/).pop()}\n(Failed to read/decode file: ${err.message})\n`
+        }
+      }
+    }
+
+    if (attachedFiles && attachedFiles.length > 0) {
+      for (const file of attachedFiles) {
+        if (!file.dataUrl) continue
+        try {
+          const base64Data = file.dataUrl.split(',')[1] || file.dataUrl
+          const buffer = Buffer.from(base64Data, 'base64')
+          const content = await decodeBuffer(buffer, file.name, file.type)
+          fileContexts += `\n\n### Content of file: ${file.name}\n${content}\n`
+        } catch (err: any) {
+          console.error(`[backend] Failed to decode attached file ${file.name}:`, err.message)
+          fileContexts += `\n\n### Content of file: ${file.name}\n(Failed to read/decode file: ${err.message})\n`
+        }
+      }
+    }
+
+    if (fileContexts) {
+      const lastUserMsgIndex = processedMessages.map((m) => m.role).lastIndexOf('user')
+      if (lastUserMsgIndex !== -1) {
+        processedMessages[lastUserMsgIndex] = {
+          ...processedMessages[lastUserMsgIndex],
+          content: processedMessages[lastUserMsgIndex].content + fileContexts
+        }
+      }
+    }
+
     if (mode === 'agent') {
-      await runAgentLoop(model, messages, res, abortSignal, sessionId)
+      await runAgentLoop(model, processedMessages, res, abortSignal, sessionId, skillsToUse)
     } else {
-      await runSimpleChat(model, messages, res, abortSignal, sessionId)
+      await runSimpleChat(model, processedMessages, res, abortSignal, sessionId)
     }
   } catch (err: any) {
     if (!abortSignal.aborted) {
       const errMsg = String(err.message || '')
-      if (errMsg.includes('does not support tools') || errMsg.includes('tool_choice')) {
-        const helpMsg = `Warning: **${model}** does not support native tool calling.\n\nSwitch to a model that supports tools:\n- \`qwen3:4b\` (recommended, ~2.6GB)\n- \`llama3.2:3b\` (~2GB)\n- \`qwen2.5:7b\` (~4.4GB)\n- \`llama3.1:8b\` (~4.7GB)\n\nRun: \`ollama pull qwen3:4b\``
-        res.write(`data: ${JSON.stringify({ content: helpMsg, done: false })}\n\n`)
+      if (
+        errMsg.includes('does not support tools') ||
+        errMsg.includes('tool_choice') ||
+        errMsg.includes('tools')
+      ) {
+        console.log(`[backend] Model ${model} does not support tools. Falling back to simple chat.`)
+        try {
+          await runSimpleChat(model, messages, res, abortSignal, sessionId)
+        } catch (fallbackErr: any) {
+          console.error('[backend] Fallback chat error:', fallbackErr.message)
+          res.write(
+            `data: ${JSON.stringify({ error: `Backend error: ${fallbackErr.message}` })}\n\n`
+          )
+        }
       } else {
         console.error('[backend] Chat error:', err.message)
         res.write(`data: ${JSON.stringify({ error: `Backend error: ${err.message}` })}\n\n`)
@@ -384,7 +460,13 @@ async function runSimpleChat(
       : {})
   }))
 
-  const stream = await ollamaClient.chat({ model, messages: ollamaMessages, stream: true })
+  const stream = await ollamaClient.chat({
+    model,
+    messages: ollamaMessages,
+    // think: false,
+    stream: true,
+    options: { num_ctx: 8192 }
+  })
 
   let fullResponse = ''
   for await (const chunk of stream) {
@@ -405,7 +487,8 @@ async function runAgentLoop(
   originalMessages: any[],
   res: any,
   abortSignal: { aborted: boolean },
-  sessionId: string | undefined
+  sessionId: string | undefined,
+  activeSkills: string[]
 ) {
   const homeDir = os.homedir()
   const username = os.userInfo().username
@@ -462,11 +545,18 @@ Use native tool calls or the [TOOL_CALL: ...] text tag format. If you output a t
     const mcpTools = needsNotion ? mcpManager.getTools() : []
     const allTools = [...AGENT_TOOLS, ...mcpTools]
 
+    // Filter tools based on active skills, but always allow MCP tools if they are dynamically loaded
+    const filteredTools = allTools.filter(
+      (t) => t.function.name.startsWith('mcp_') || activeSkills.includes(t.function.name)
+    )
+
     const stream = await ollamaClient.chat({
       model,
       messages: conversationMessages,
-      tools: allTools.length > 0 ? allTools : undefined,
-      stream: true
+      // think: false,
+      tools: filteredTools.length > 0 ? filteredTools : undefined,
+      stream: true,
+      options: { num_ctx: 8192 }
     })
 
     let textContent = ''
@@ -527,12 +617,7 @@ Use native tool calls or the [TOOL_CALL: ...] text tag format. If you output a t
       tool_calls: rawToolCalls.length > 0 ? rawToolCalls : undefined
     } as any)
 
-    // --- Execute tool calls and inject results as a single user message ---
-    // Small models (qwen3:4b, llama3.2) don't reliably correlate role:'tool' messages back
-    // to their calls. Injecting results as a user message is universally understood and
-    // prevents the model from seeing an "unanswered" tool call and repeating it in a loop.
-    const toolResultParts: string[] = []
-
+    // --- Execute tool calls and inject results as proper tool messages ---
     for (const tc of nativeToolCalls) {
       if (abortSignal.aborted) break
 
@@ -555,14 +640,13 @@ Use native tool calls or the [TOOL_CALL: ...] text tag format. If you output a t
       res.write(`data: ${JSON.stringify({ content: resultBlock, done: false })}\n\n`)
       if (res.flush) res.flush()
 
-      toolResultParts.push(`Tool "${tc.name}" returned:\n${toolResult}`)
+      // Push the proper tool response message to the message history so Ollama can correlate it
+      conversationMessages.push({
+        role: 'tool',
+        content: toolResult,
+        tool_name: tc.name
+      })
     }
-
-    // Single user message with all tool results — model will now generate its final answer
-    conversationMessages.push({
-      role: 'user',
-      content: toolResultParts.join('\n\n')
-    })
   }
 
   await saveMessageToDb(sessionId, originalMessages, fullAssistantResponse)
