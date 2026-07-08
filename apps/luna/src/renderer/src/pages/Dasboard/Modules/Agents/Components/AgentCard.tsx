@@ -1,5 +1,5 @@
 import React from 'react'
-import { Settings2, ShieldCheck, AlertCircle } from 'lucide-react'
+import { Settings2, ShieldCheck } from 'lucide-react'
 
 export interface AgentTool {
   id: string

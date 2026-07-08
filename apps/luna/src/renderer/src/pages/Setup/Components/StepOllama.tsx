@@ -80,7 +80,7 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
     }
   }
 
-  const SETUP_MODELS = ['qwen3:4b', 'qwen2.5-vl:3b']
+  // const SETUP_MODELS = ['qwen3:4b', 'qwen2.5-vl:3b']
 
   const pullModel = (modelId: string): Promise<void> => {
     return new Promise((resolve, reject) => {

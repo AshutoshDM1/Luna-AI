@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { AgentCard, AgentTool } from './Components/AgentCard'
 
 export const Agents: React.FC = () => {
