@@ -258,6 +258,8 @@ export const Chat: React.FC<ChatProps> = ({
                 errorMessage = data.error
                 setIsThinking(false)
                 break outer
+              } else if (data.done) {
+                break outer
               } else if (data.content) {
                 if (!thinkingDone) {
                   setIsThinking(false)
@@ -281,7 +283,7 @@ export const Chat: React.FC<ChatProps> = ({
             if (data.error) {
               errorMessage = data.error
               setIsThinking(false)
-            } else if (data.content) {
+            } else if (!data.done && data.content) {
               if (!thinkingDone) {
                 setIsThinking(false)
                 thinkingDone = true
@@ -447,6 +449,8 @@ export const Chat: React.FC<ChatProps> = ({
                 errorMessage = data.error
                 setIsThinking(false)
                 break outer
+              } else if (data.done) {
+                break outer
               } else if (data.content) {
                 if (!thinkingDone) {
                   setIsThinking(false)
@@ -470,7 +474,7 @@ export const Chat: React.FC<ChatProps> = ({
             if (data.error) {
               errorMessage = data.error
               setIsThinking(false)
-            } else if (data.content) {
+            } else if (!data.done && data.content) {
               if (!thinkingDone) {
                 setIsThinking(false)
                 thinkingDone = true

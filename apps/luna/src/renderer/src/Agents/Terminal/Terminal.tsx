@@ -11,6 +11,7 @@ interface TerminalAgentProps {
   onStartExecuting?: () => void
   preExecutedOutput?: string
   preExecutedSuccess?: boolean
+  isBackendExecuted?: boolean
 }
 
 export const TerminalAgent: React.FC<TerminalAgentProps> = ({
@@ -21,7 +22,8 @@ export const TerminalAgent: React.FC<TerminalAgentProps> = ({
   isSystemBusy = false,
   onStartExecuting,
   preExecutedOutput,
-  preExecutedSuccess = true
+  preExecutedSuccess = true,
+  isBackendExecuted = false
 }) => {
   const [decision, setDecision] = useState<
     'pending' | 'executing' | 'approved' | 'failed' | 'denied'
@@ -33,12 +35,19 @@ export const TerminalAgent: React.FC<TerminalAgentProps> = ({
   const commandLabel = commandList.join('\n')
 
   React.useEffect(() => {
-    if (decision === 'pending') {
+    if (decision === 'pending' && !isBackendExecuted) {
       if (!isSystemBusy) {
         handleApprove()
       }
     }
-  }, [decision, isSystemBusy])
+  }, [decision, isSystemBusy, isBackendExecuted])
+
+  React.useEffect(() => {
+    if (isBackendExecuted && preExecutedOutput !== undefined) {
+      setDecision(preExecutedSuccess ? 'approved' : 'failed')
+      setResult(preExecutedOutput)
+    }
+  }, [preExecutedOutput, preExecutedSuccess, isBackendExecuted])
 
   const handleApprove = async () => {
     if (isSystemBusy) return

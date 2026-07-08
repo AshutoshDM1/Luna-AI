@@ -28,6 +28,104 @@ interface MessageItemProps {
   onStartExecuting?: () => void
 }
 
+interface ParsedToolCall {
+  id: string
+  name: string
+  args: Record<string, any>
+}
+
+interface ParsedToolResult {
+  id: string
+  name: string
+  output: string
+  success: boolean
+  args: Record<string, any>
+}
+
+function parseToolCallJson(jsonStr: string): Record<string, any> {
+  const sanitized = jsonStr.replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+  return JSON.parse(sanitized)
+}
+
+function parseToolCallsFromContent(content: string): {
+  toolCalls: Map<string, ParsedToolCall>
+  toolResults: Map<string, ParsedToolResult>
+  textSegments: string[]
+} {
+  const toolCalls = new Map<string, ParsedToolCall>()
+  const toolResults = new Map<string, ParsedToolResult>()
+
+  // Extract TOOL_CALL blocks
+  const callRe = /\[TOOL_CALL:\s*(\{.+?\})\]/gs
+  let match: RegExpExecArray | null
+  while ((match = callRe.exec(content)) !== null) {
+    try {
+      const parsed = parseToolCallJson(match[1])
+      if (parsed.name && parsed.id) {
+        const { name, id, ...args } = parsed
+        toolCalls.set(id, { id, name, args })
+      }
+    } catch {}
+  }
+
+  // Extract TOOL_RESULT blocks
+  const resultRe = /\[TOOL_RESULT:\s*(\{.+?\})\]/gs
+  while ((match = resultRe.exec(content)) !== null) {
+    try {
+      const parsed = parseToolCallJson(match[1])
+      if (parsed.name && parsed.id) {
+        const { id, name, output, success, ...rest } = parsed
+        toolResults.set(id, {
+          id,
+          name,
+          output: output || '',
+          success: success !== false,
+          args: rest
+        })
+      }
+    } catch {}
+  }
+
+  // Split content into text segments (between tool blocks)
+  const textSegments = content
+    .split(
+      /\[TOOL_CALL:\s*\{.+?\}\]\s*\[TOOL_RESULT:\s*\{.+?\}\]|\[TOOL_CALL:\s*\{.+?\}\]|\[TOOL_RESULT:\s*\{.+?\}\]/gs
+    )
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  return { toolCalls, toolResults, textSegments }
+}
+
+// Also support legacy format for backward compat
+function parseLegacyCommand(content: string): string | null {
+  const match = content.match(/\[EXECUTE_COMMAND:([^\]]+)\]/)
+  return match ? match[1].trim() : null
+}
+
+const MARKDOWN_COMPONENTS = {
+  p: ({ children }: any) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+  ul: ({ children }: any) => <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>,
+  ol: ({ children }: any) => <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>,
+  li: ({ children }: any) => <li className="text-xs sm:text-sm leading-relaxed">{children}</li>,
+  h1: ({ children }: any) => <h1 className="text-lg font-bold mb-2 text-foreground">{children}</h1>,
+  h2: ({ children }: any) => (
+    <h2 className="text-base font-bold mb-2 text-foreground">{children}</h2>
+  ),
+  h3: ({ children }: any) => <h3 className="text-sm font-bold mb-1 text-foreground">{children}</h3>,
+  code: ({ children }: any) => (
+    <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
+      {children}
+    </code>
+  ),
+  pre: ({ children }: any) => (
+    <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
+      {children}
+    </pre>
+  ),
+  hr: () => null
+}
+
 export const MessageItem: React.FC<MessageItemProps> = ({
   role,
   content,
@@ -72,13 +170,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     )
   }
 
-  // Assistant message rendering (completely borderless, clean layout)
+  // Check for legacy format
+  const legacyCommand = !content.includes('[TOOL_CALL:') ? parseLegacyCommand(content) : null
+
   return (
     <div className="flex flex-col items-start w-full text-left space-y-3 animate-[fadeIn_0.2s_ease-out] py-4">
-      {/* Content text */}
       <div className="leading-relaxed text-foreground font-medium text-xs sm:text-sm wrap-break-word select-text w-full">
         {isThinking ? (
-          /* Animated thinking dots */
           <span className="inline-flex items-center gap-1 py-1">
             <span
               className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce"
@@ -96,225 +194,142 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         ) : (
           <div>
             {(() => {
-              // Support both new JSON format: [TOOL_CALL: {"name":"terminal",...}]
-              // and legacy format: [EXECUTE_COMMAND: cmd] for backward compat
-              // Use a greedy-to-last-brace pattern so nested/complex JSON works
-              const TOOL_CALL_RE = /\[TOOL_CALL:\s*(\{.+?\})\]/gs
-              const LEGACY_RE = /\[EXECUTE_COMMAND:([^\]]+)\]/g
-              const hasNewFormat = TOOL_CALL_RE.test(content)
-              const hasLegacyFormat = !hasNewFormat && LEGACY_RE.test(content)
+              // ── New ID-based format ──────────────────────────────────────
+              if (content.includes('[TOOL_CALL:')) {
+                const { toolCalls, toolResults, textSegments } = parseToolCallsFromContent(content)
 
-              const parseToolCallJson = (jsonStr: string) => {
-                const sanitized = jsonStr.replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
-                return JSON.parse(sanitized)
-              }
+                const elements: React.ReactNode[] = []
 
-              if (hasNewFormat) {
-                // Split on [TOOL_CALL: {...}] boundaries
-                const parts = content.split(/(\[TOOL_CALL:\s*\{.+?\}\])/gs)
-                return parts.map((part, i) => {
-                  const tcMatch = part.match(/^\[TOOL_CALL:\s*(\{.+?\})\]$/s)
-                  if (tcMatch) {
-                    try {
-                      const tool = parseToolCallJson(tcMatch[1]) as {
-                        name: string
-                        command?: string
-                        commands?: string[]
-                        query?: string
-                        app?: string
-                      }
-                      if (tool.name === 'terminal' && (tool.command || tool.commands?.length)) {
-                        const commandLabel = tool.commands?.length
-                          ? tool.commands.join('\n')
-                          : tool.command || ''
-                        // Find matching TOOL_RESULT in the same message
-                        const allResultsRe = /\[TOOL_RESULT:\s*(\{.+?\})\]/gs
-                        let resultMatch: RegExpExecArray | null
-                        let preExecutedOutput: string | undefined
-                        let preExecutedSuccess = true
-                        allResultsRe.lastIndex = 0
-                        while ((resultMatch = allResultsRe.exec(content)) !== null) {
-                          try {
-                            const parsedRes = parseToolCallJson(resultMatch[1])
-                            const resultCommandLabel = Array.isArray(parsedRes.commands)
-                              ? parsedRes.commands.join('\n')
-                              : parsedRes.command || ''
-                            if (
-                              parsedRes.name === 'terminal' &&
-                              resultCommandLabel === commandLabel
-                            ) {
-                              preExecutedOutput = parsedRes.output
-                              preExecutedSuccess = parsedRes.success !== false
-                              break
-                            }
-                          } catch {}
-                        }
+                // Render each tool call with its matched result
+                let callIndex = 0
+                for (const [id, tc] of toolCalls) {
+                  const result = toolResults.get(id)
 
-                        return (
-                          <TerminalAgent
-                            key={i}
-                            command={commandLabel}
-                            commands={tool.commands}
-                            onPermissionGranted={onPermissionGranted}
-                            onCommandExecuted={onCommandExecuted}
-                            isSystemBusy={isExecutingCommand}
-                            onStartExecuting={onStartExecuting}
-                            preExecutedOutput={preExecutedOutput}
-                            preExecutedSuccess={preExecutedSuccess}
-                          />
-                        )
-                      }
-                      if (tool.name === 'web_search' && tool.query) {
-                        // Find matching TOOL_RESULT in the same message
-                        const allResultsRe = /\[TOOL_RESULT:\s*(\{.+?\})\]/gs
-                        let resultMatch: RegExpExecArray | null
-                        let preExecutedOutput: string | undefined
-                        allResultsRe.lastIndex = 0
-                        while ((resultMatch = allResultsRe.exec(content)) !== null) {
-                          try {
-                            const parsedRes = parseToolCallJson(resultMatch[1])
-                            if (parsedRes.name === 'web_search' && parsedRes.query === tool.query) {
-                              preExecutedOutput = parsedRes.output
-                              break
-                            }
-                          } catch {}
-                        }
-
-                        if (preExecutedOutput) {
-                          return (
-                            <div
-                              key={i}
-                              className="flex flex-col gap-1.5 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs"
-                            >
-                              <div className="flex items-center gap-2 text-muted-foreground/70">
-                                <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                                <span>
-                                  Searched web for{' '}
-                                  <span className="text-indigo-300 font-medium">
-                                    &ldquo;{tool.query}&rdquo;
-                                  </span>
-                                </span>
-                              </div>
-                              <div className="pl-5.5 text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap font-sans">
-                                {preExecutedOutput}
-                              </div>
-                            </div>
-                          )
-                        }
-
-                        return (
-                          <div
-                            key={i}
-                            className="flex items-center gap-2 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs text-muted-foreground/70"
-                          >
-                            <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0 animate-pulse" />
+                  if (tc.name === 'terminal' && (tc.args.command || tc.args.commands?.length)) {
+                    const commandLabel = tc.args.commands?.length
+                      ? tc.args.commands.join('\n')
+                      : tc.args.command || ''
+                    elements.push(
+                      <TerminalAgent
+                        key={`tc-${id || callIndex}`}
+                        command={commandLabel}
+                        commands={tc.args.commands}
+                        onPermissionGranted={onPermissionGranted}
+                        onCommandExecuted={onCommandExecuted}
+                        isSystemBusy={isExecutingCommand}
+                        onStartExecuting={onStartExecuting}
+                        preExecutedOutput={result?.output}
+                        preExecutedSuccess={result?.success}
+                        isBackendExecuted={true}
+                      />
+                    )
+                  } else if (tc.name === 'web_search' && tc.args.query) {
+                    if (result) {
+                      elements.push(
+                        <div
+                          key={`tc-${id || callIndex}`}
+                          className="flex flex-col gap-1.5 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs"
+                        >
+                          <div className="flex items-center gap-2 text-muted-foreground/70">
+                            <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                             <span>
-                              Searching web for{' '}
+                              Searched web for{' '}
                               <span className="text-indigo-300 font-medium">
-                                &ldquo;{tool.query}&rdquo;
+                                &ldquo;{tc.args.query}&rdquo;
                               </span>
-                              &hellip;
                             </span>
                           </div>
-                        )
-                      }
-                      if (tool.name === 'open_app' && tool.app) {
-                        const allResultsRe = /\[TOOL_RESULT:\s*(\{.+?\})\]/gs
-                        let resultMatch: RegExpExecArray | null
-                        let preExecutedOutput: string | undefined
-                        allResultsRe.lastIndex = 0
-                        while ((resultMatch = allResultsRe.exec(content)) !== null) {
-                          try {
-                            const parsedRes = parseToolCallJson(resultMatch[1])
-                            if (parsedRes.name === 'open_app' && parsedRes.app === tool.app) {
-                              preExecutedOutput = parsedRes.output
-                              break
-                            }
-                          } catch {}
-                        }
-
-                        return (
-                          <div
-                            key={i}
-                            className="flex flex-col gap-1.5 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs"
-                          >
-                            <div className="flex items-center gap-2 text-muted-foreground/70">
-                              <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              <span>
-                                Opened{' '}
-                                <span className="text-indigo-300 font-medium">{tool.app}</span>
-                              </span>
-                            </div>
-                            {preExecutedOutput && (
-                              <div className="pl-5.5 text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap font-sans">
-                                {preExecutedOutput}
-                              </div>
-                            )}
+                          <div className="pl-5.5 text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap font-sans">
+                            {result.output}
                           </div>
-                        )
-                      }
-                    } catch {
-                      /* malformed JSON, fall through to text */
+                        </div>
+                      )
+                    } else {
+                      elements.push(
+                        <div
+                          key={`tc-${id || callIndex}`}
+                          className="flex items-center gap-2 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs text-muted-foreground/70"
+                        >
+                          <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0 animate-pulse" />
+                          <span>
+                            Searching web for{' '}
+                            <span className="text-indigo-300 font-medium">
+                              &ldquo;{tc.args.query}&rdquo;
+                            </span>
+                            &hellip;
+                          </span>
+                        </div>
+                      )
+                    }
+                  } else if (tc.name === 'open_app' && tc.args.app) {
+                    if (result) {
+                      const success = result.success !== false
+                      elements.push(
+                        <div
+                          key={`tc-${id || callIndex}`}
+                          className="flex flex-col gap-1.5 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs"
+                        >
+                          <div className="flex items-center gap-2 text-muted-foreground/70">
+                            {success ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            ) : (
+                              <Globe className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                            )}
+                            <span>
+                              {success ? 'Opened' : 'Failed to open'}{' '}
+                              <span className="text-indigo-300 font-medium">{tc.args.app}</span>
+                            </span>
+                          </div>
+                          {result.output && (
+                            <div className="pl-5.5 text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap font-sans">
+                              {result.output}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    } else {
+                      elements.push(
+                        <div
+                          key={`tc-${id || callIndex}`}
+                          className="flex items-center gap-2 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs text-muted-foreground/70"
+                        >
+                          <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0 animate-pulse" />
+                          <span>
+                            Opening app{' '}
+                            <span className="text-indigo-300 font-medium">{tc.args.app}</span>...
+                          </span>
+                        </div>
+                      )
                     }
                   }
-                  if (!part.trim()) return null
-                  // Clean out raw tool results from the text block
-                  const cleanedPart = part.replace(/\[TOOL_RESULT:\s*\{.+?\}\]/gs, '').trim()
-                  if (!cleanedPart) return null
-                  return (
-                    <ReactMarkdown
-                      key={i}
-                      components={{
-                        p: ({ children }) => (
-                          <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
-                        ),
-                        ul: ({ children }) => (
-                          <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>
-                        ),
-                        ol: ({ children }) => (
-                          <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
-                        ),
-                        li: ({ children }) => (
-                          <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
-                        ),
-                        h1: ({ children }) => (
-                          <h1 className="text-lg font-bold mb-2 text-foreground">{children}</h1>
-                        ),
-                        h2: ({ children }) => (
-                          <h2 className="text-base font-bold mb-2 text-foreground">{children}</h2>
-                        ),
-                        h3: ({ children }) => (
-                          <h3 className="text-sm font-bold mb-1 text-foreground">{children}</h3>
-                        ),
-                        code: ({ children }) => (
-                          <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
-                            {children}
-                          </code>
-                        ),
-                        pre: ({ children }) => (
-                          <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
-                            {children}
-                          </pre>
-                        ),
-                        hr: () => null
-                      }}
-                    >
-                      {cleanedPart}
-                    </ReactMarkdown>
-                  )
-                })
+                  callIndex++
+                }
+
+                // Render text segments
+                for (let i = 0; i < textSegments.length; i++) {
+                  const cleaned = textSegments[i].replace(/\[TOOL_RESULT:\s*\{.+?\}\]/gs, '').trim()
+                  if (cleaned) {
+                    elements.push(
+                      <ReactMarkdown key={`text-${i}`} components={MARKDOWN_COMPONENTS}>
+                        {cleaned}
+                      </ReactMarkdown>
+                    )
+                  }
+                }
+
+                return elements.length > 0 ? elements : null
               }
 
-              if (hasLegacyFormat) {
-                // Backward compat: old [EXECUTE_COMMAND: cmd] format
+              // ── Legacy format ──────────────────────────────────────────
+              if (legacyCommand) {
                 const parts = content.split(/(\[EXECUTE_COMMAND:[^\]]+\])/g)
                 return parts.map((part, i) => {
                   if (part.startsWith('[EXECUTE_COMMAND:') && part.endsWith(']')) {
-                    const command = part.slice(17, -1).trim()
+                    const cmd = part.slice(17, -1).trim()
                     return (
                       <TerminalAgent
                         key={i}
-                        command={command}
+                        command={cmd}
                         onPermissionGranted={onPermissionGranted}
                         onCommandExecuted={onCommandExecuted}
                         isSystemBusy={isExecutingCommand}
@@ -323,82 +338,16 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     )
                   }
                   return (
-                    <ReactMarkdown
-                      key={i}
-                      components={{
-                        p: ({ children }) => (
-                          <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
-                        ),
-                        ul: ({ children }) => (
-                          <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>
-                        ),
-                        ol: ({ children }) => (
-                          <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
-                        ),
-                        li: ({ children }) => (
-                          <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
-                        ),
-                        code: ({ children }) => (
-                          <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
-                            {children}
-                          </code>
-                        ),
-                        pre: ({ children }) => (
-                          <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
-                            {children}
-                          </pre>
-                        ),
-                        hr: () => null
-                      }}
-                    >
+                    <ReactMarkdown key={i} components={MARKDOWN_COMPONENTS}>
                       {part}
                     </ReactMarkdown>
                   )
                 })
               }
-              // Plain markdown fallback — no tool calls
-              return (
-                <ReactMarkdown
-                  components={{
-                    p: ({ children }) => (
-                      <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
-                    ),
-                    ul: ({ children }) => (
-                      <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>
-                    ),
-                    ol: ({ children }) => (
-                      <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
-                    ),
-                    li: ({ children }) => (
-                      <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
-                    ),
-                    h1: ({ children }) => (
-                      <h1 className="text-lg font-bold mb-2 text-foreground">{children}</h1>
-                    ),
-                    h2: ({ children }) => (
-                      <h2 className="text-base font-bold mb-2 text-foreground">{children}</h2>
-                    ),
-                    h3: ({ children }) => (
-                      <h3 className="text-sm font-bold mb-1 text-foreground">{children}</h3>
-                    ),
-                    code: ({ children }) => (
-                      <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
-                        {children}
-                      </code>
-                    ),
-                    pre: ({ children }) => (
-                      <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
-                        {children}
-                      </pre>
-                    ),
-                    hr: () => null
-                  }}
-                >
-                  {content}
-                </ReactMarkdown>
-              )
+
+              // ── Plain markdown ──────────────────────────────────────────
+              return <ReactMarkdown components={MARKDOWN_COMPONENTS}>{content}</ReactMarkdown>
             })()}
-            {/* Blinking cursor only on the live streaming bubble */}
             {isStreaming && (
               <span className="inline-block w-0.5 h-3.5 bg-foreground/70 ml-0.5 align-middle animate-pulse" />
             )}
@@ -411,7 +360,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         !content.includes('[TOOL_CALL:') &&
         !content.includes('[EXECUTE_COMMAND:') && (
           <div className="space-y-4 w-full">
-            {/* Action Toolbar */}
             <div className="flex items-center gap-3 text-muted-foreground/60">
               <button
                 onClick={handleCopy}
@@ -467,7 +415,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               </button>
             </div>
 
-            {/* Suggestion Prompts */}
             <div className="flex flex-col gap-2 pt-1 font-sans text-xs text-muted-foreground/80">
               <button
                 onClick={() => onSuggestionClick?.('Tell me about your interests')}
