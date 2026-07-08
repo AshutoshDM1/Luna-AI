@@ -1,6 +1,18 @@
 import fs from 'fs'
-// @ts-ignore
-const { PDFParse } = require('pdf-parse')
+
+let PDFParseClass: any = null
+
+async function getPDFParse() {
+  if (!PDFParseClass) {
+    // Polyfill DOMMatrix for pdf-parse (needed in Node/Electron main process environments)
+    if (typeof (global as any).DOMMatrix === 'undefined') {
+      ;(global as any).DOMMatrix = class DOMMatrix {}
+    }
+    const pdfModule = await import('pdf-parse')
+    PDFParseClass = pdfModule.PDFParse
+  }
+  return PDFParseClass
+}
 
 /**
  * Reads a file from the local filesystem and decodes it.
@@ -9,8 +21,9 @@ const { PDFParse } = require('pdf-parse')
 export async function decodeFile(filePath: string): Promise<string> {
   const ext = filePath.split('.').pop()?.toLowerCase()
   if (ext === 'pdf') {
+    const Parser = await getPDFParse()
     const dataBuffer = fs.readFileSync(filePath)
-    const parser = new PDFParse({ data: dataBuffer })
+    const parser = new Parser({ data: dataBuffer })
     const result = await parser.getText()
     return result.text || ''
   } else {
@@ -26,7 +39,8 @@ export async function decodeBuffer(
 ): Promise<string> {
   const ext = filename.split('.').pop()?.toLowerCase()
   if (ext === 'pdf' || mimeType === 'application/pdf') {
-    const parser = new PDFParse({ data: buffer })
+    const Parser = await getPDFParse()
+    const parser = new Parser({ data: buffer })
     const result = await parser.getText()
     return result.text || ''
   } else {

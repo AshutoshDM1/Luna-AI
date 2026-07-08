@@ -15,11 +15,14 @@ if (!fs.existsSync(dataDir)) {
 export function getSettings() {
   try {
     if (fs.existsSync(settingsFile)) {
-      const data = fs.readFileSync(settingsFile, 'utf-8')
+      const data = fs.readFileSync(settingsFile, 'utf-8').trim()
+      if (!data) {
+        return {}
+      }
       return JSON.parse(data)
     }
-  } catch (err) {
-    console.error('Failed to read settings', err)
+  } catch (err: any) {
+    console.error('Failed to read settings:', err.message)
   }
   return {}
 }

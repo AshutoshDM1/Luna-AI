@@ -10,9 +10,32 @@ try {
   const { app } = require('electron')
   if (app) {
     const isDev = !app.isPackaged
-    dbPath = isDev
-      ? path.resolve(__dirname, '../../src/backend/src/db/dev.db')
-      : path.join(app.getPath('userData'), 'luna-database.db')
+    if (isDev) {
+      dbPath = path.resolve(__dirname, '../../src/backend/src/db/dev.db')
+    } else {
+      dbPath = path.join(app.getPath('userData'), 'luna-database.db')
+
+      // Ensure the directory for the database exists
+      const dir = path.dirname(dbPath)
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true })
+      }
+
+      // If database file does not exist in userData, copy the template from resources
+      if (!fs.existsSync(dbPath)) {
+        const templatePath = path.join(process.resourcesPath, 'template.db')
+        if (fs.existsSync(templatePath)) {
+          try {
+            fs.copyFileSync(templatePath, dbPath)
+            console.log('🚀 Copied database template to:', dbPath)
+          } catch (err: any) {
+            console.error('❌ Failed to copy template database:', err.message)
+          }
+        } else {
+          console.warn('⚠️ Template database not found at:', templatePath)
+        }
+      }
+    }
   } else {
     dbPath = path.resolve(__dirname, 'dev.db')
   }

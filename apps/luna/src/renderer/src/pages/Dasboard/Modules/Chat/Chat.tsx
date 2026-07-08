@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select'
 import ApiClient from '@/lib/apiClient'
 import { API_BASE_URL } from '@/services/api'
-import { GithubIcon, NotionIcon, GmailIcon } from '@/shared/Logos/Icons'
+import { GithubIcon, NotionIcon } from '@/shared/Logos/Icons'
 
 interface ChatProps {
   assistantName: string
