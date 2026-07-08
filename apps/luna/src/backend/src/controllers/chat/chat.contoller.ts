@@ -1,7 +1,7 @@
 import { Request, Response } from 'express'
 import { prisma } from '../../db/db'
 import { webSearch } from '../../skills/web_search'
-import { runTerminalCommand } from '../../skills/terminal'
+import { runTerminalCommand, runTerminalCommands } from '../../skills/terminal'
 import { openApp } from '../../skills/open_app'
 import { Ollama, Message, Tool } from 'ollama'
 import os from 'os'
@@ -15,13 +15,22 @@ const AGENT_TOOLS: Tool[] = [
     function: {
       name: 'terminal',
       description:
-        'Run a Windows CMD/PowerShell command on the local machine. Use for file operations, checking installed software, running scripts, creating files, etc.',
+        'Run terminal commands on the local machine. For complex tasks, provide commands as an array and they will run one by one in the same working directory.',
       parameters: {
         type: 'object',
         properties: {
-          command: { type: 'string', description: 'The Windows command to execute' }
-        },
-        required: ['command']
+          command: { type: 'string', description: 'A single command to execute' },
+          commands: {
+            type: 'array',
+            description: 'Multiple commands to execute sequentially for a complex task',
+            items: { type: 'string' }
+          },
+          stopOnError: {
+            type: 'boolean',
+            description:
+              'Whether to stop the queue after the first failed command. Defaults to true.'
+          }
+        }
       }
     }
   },
@@ -45,7 +54,7 @@ const AGENT_TOOLS: Tool[] = [
     function: {
       name: 'open_app',
       description:
-        'Open a desktop application on Windows (e.g. chrome, notepad, calculator, explorer, vs code, cmd)',
+        'Open a desktop application on Windows or macOS by name. Use for apps like Chrome, Safari, Notepad, Calculator, Finder, Explorer, Spotify, VS Code, Terminal.',
       parameters: {
         type: 'object',
         properties: {
@@ -60,13 +69,20 @@ const AGENT_TOOLS: Tool[] = [
 // ─── Tool Executor ─────────────────────────────────────────────────────────────
 async function executeTool(
   name: string,
-  args: Record<string, string>,
+  args: Record<string, any>,
   sessionId: string
 ): Promise<string> {
   console.log(`[backend] Executing tool: "${name}"`, args)
 
   if (name === 'terminal' && args.command) {
     const result = await runTerminalCommand(args.command, sessionId)
+    return result.output
+  }
+
+  if (name === 'terminal' && Array.isArray(args.commands)) {
+    const result = await runTerminalCommands(args.commands, sessionId, {
+      stopOnError: args.stopOnError !== false
+    })
     return result.output
   }
 
@@ -80,6 +96,24 @@ async function executeTool(
   }
 
   return `Unknown tool: ${name}`
+}
+
+function parseTaggedToolCall(content: string): { name: string; args: Record<string, any> } | null {
+  const match = content.match(/\[TOOL_CALL:\s*(\{[\s\S]*?\})\]/)
+  if (!match) return null
+
+  try {
+    const parsed = JSON.parse(match[1].replace(/\\(?!["\\/bfnrtu])/g, '\\\\')) as Record<
+      string,
+      string
+    >
+    const { name, ...args } = parsed
+    if (!name) return null
+    return { name, args }
+  } catch (err: any) {
+    console.warn('[backend] Failed to parse tagged tool call:', err.message)
+    return null
+  }
 }
 
 // ─── Request Handler ───────────────────────────────────────────────────────────
@@ -176,7 +210,9 @@ SYSTEM:
 - Username: ${username}
 - Home: ${homeDir}
 - Downloads: ${homeDir}\\Downloads
-- Desktop: ${homeDir}\\Desktop`
+- Desktop: ${homeDir}\\Desktop
+
+Use native tool calls whenever possible. If you output a text [TOOL_CALL: {...}] tag, the backend will execute it. Do not claim an app is missing unless the tool result says it could not be found.`
 
   // Proper conversation structure: system → (user/assistant history) → latest user
   const conversationMessages: Message[] = [
@@ -221,6 +257,36 @@ SYSTEM:
 
     // No tool calls → conversation is done
     if (toolCalls.length === 0) {
+      const taggedToolCall = parseTaggedToolCall(textContent)
+      if (taggedToolCall) {
+        const { name, args } = taggedToolCall
+        const toolResult = await executeTool(name, args, sessionId || 'default')
+        const resultPreview = `[TOOL_RESULT: ${JSON.stringify({ name, ...args, output: toolResult })}]\n`
+        fullAssistantResponse += resultPreview
+        res.write(`data: ${JSON.stringify({ content: resultPreview, done: false })}\n\n`)
+
+        conversationMessages.push({
+          role: 'assistant',
+          content: textContent
+        })
+        conversationMessages.push({
+          role: 'tool',
+          content: toolResult
+        })
+
+        if (name === 'open_app') {
+          const app = args.app || 'the app'
+          const summary = toolResult.toLowerCase().includes('could not')
+            ? `I could not open ${app}. ${toolResult}`
+            : `Opened ${app}.`
+          fullAssistantResponse += summary
+          res.write(`data: ${JSON.stringify({ content: summary, done: false })}\n\n`)
+          break
+        }
+
+        continue
+      }
+
       console.log(`[backend] No tool calls, agent loop complete`)
       break
     }
@@ -233,7 +299,7 @@ SYSTEM:
       if (abortSignal.aborted) break
 
       const name = tc.function.name
-      const args = (tc.function.arguments || {}) as Record<string, string>
+      const args = (tc.function.arguments || {}) as Record<string, any>
 
       // Emit tool call preview to frontend
       const callPreview = `\n[TOOL_CALL: ${JSON.stringify({ name, ...args })}]\n`
@@ -244,7 +310,7 @@ SYSTEM:
       const toolResult = await executeTool(name, args, sessionId || 'default')
 
       // Emit result preview to frontend
-      const resultPreview = `[TOOL_RESULT: ${JSON.stringify({ name, output: toolResult })}]\n`
+      const resultPreview = `[TOOL_RESULT: ${JSON.stringify({ name, ...args, output: toolResult })}]\n`
       fullAssistantResponse += resultPreview
       res.write(`data: ${JSON.stringify({ content: resultPreview, done: false })}\n\n`)
 

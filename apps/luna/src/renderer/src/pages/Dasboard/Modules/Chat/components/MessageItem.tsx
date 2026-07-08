@@ -119,9 +119,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                       const tool = parseToolCallJson(tcMatch[1]) as {
                         name: string
                         command?: string
+                        commands?: string[]
                         query?: string
+                        app?: string
                       }
-                      if (tool.name === 'terminal' && tool.command) {
+                      if (tool.name === 'terminal' && (tool.command || tool.commands?.length)) {
+                        const commandLabel = tool.commands?.length
+                          ? tool.commands.join('\n')
+                          : tool.command || ''
                         // Find matching TOOL_RESULT in the same message
                         const allResultsRe = /\[TOOL_RESULT:\s*(\{.+?\})\]/gs
                         let resultMatch: RegExpExecArray | null
@@ -131,9 +136,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                         while ((resultMatch = allResultsRe.exec(content)) !== null) {
                           try {
                             const parsedRes = parseToolCallJson(resultMatch[1])
+                            const resultCommandLabel = Array.isArray(parsedRes.commands)
+                              ? parsedRes.commands.join('\n')
+                              : parsedRes.command || ''
                             if (
                               parsedRes.name === 'terminal' &&
-                              parsedRes.command === tool.command
+                              resultCommandLabel === commandLabel
                             ) {
                               preExecutedOutput = parsedRes.output
                               preExecutedSuccess = parsedRes.success !== false
@@ -145,7 +153,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                         return (
                           <TerminalAgent
                             key={i}
-                            command={tool.command}
+                            command={commandLabel}
+                            commands={tool.commands}
                             onPermissionGranted={onPermissionGranted}
                             onCommandExecuted={onCommandExecuted}
                             isSystemBusy={isExecutingCommand}
@@ -206,6 +215,41 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                               </span>
                               &hellip;
                             </span>
+                          </div>
+                        )
+                      }
+                      if (tool.name === 'open_app' && tool.app) {
+                        const allResultsRe = /\[TOOL_RESULT:\s*(\{.+?\})\]/gs
+                        let resultMatch: RegExpExecArray | null
+                        let preExecutedOutput: string | undefined
+                        allResultsRe.lastIndex = 0
+                        while ((resultMatch = allResultsRe.exec(content)) !== null) {
+                          try {
+                            const parsedRes = parseToolCallJson(resultMatch[1])
+                            if (parsedRes.name === 'open_app' && parsedRes.app === tool.app) {
+                              preExecutedOutput = parsedRes.output
+                              break
+                            }
+                          } catch {}
+                        }
+
+                        return (
+                          <div
+                            key={i}
+                            className="flex flex-col gap-1.5 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs"
+                          >
+                            <div className="flex items-center gap-2 text-muted-foreground/70">
+                              <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              <span>
+                                Opened{' '}
+                                <span className="text-indigo-300 font-medium">{tool.app}</span>
+                              </span>
+                            </div>
+                            {preExecutedOutput && (
+                              <div className="pl-5.5 text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap font-sans">
+                                {preExecutedOutput}
+                              </div>
+                            )}
                           </div>
                         )
                       }

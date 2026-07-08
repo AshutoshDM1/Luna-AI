@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
-import { Check, X, Loader } from 'lucide-react'
+import { Loader } from 'lucide-react'
 import { API_BASE_URL } from '@/services/api'
 
 interface TerminalAgentProps {
   command: string
+  commands?: string[]
   onPermissionGranted: (execute: boolean) => void
   onCommandExecuted?: (command: string, success: boolean, output: string) => void
   isSystemBusy?: boolean
@@ -14,6 +15,7 @@ interface TerminalAgentProps {
 
 export const TerminalAgent: React.FC<TerminalAgentProps> = ({
   command,
+  commands,
   onPermissionGranted,
   onCommandExecuted,
   isSystemBusy = false,
@@ -27,6 +29,16 @@ export const TerminalAgent: React.FC<TerminalAgentProps> = ({
   const [result, setResult] = useState<string>(preExecutedOutput || '')
 
   const [cwd, setCwd] = useState<string>('')
+  const commandList = commands && commands.length > 0 ? commands : [command]
+  const commandLabel = commandList.join('\n')
+
+  React.useEffect(() => {
+    if (decision === 'pending') {
+      if (!isSystemBusy) {
+        handleApprove()
+      }
+    }
+  }, [decision, isSystemBusy])
 
   const handleApprove = async () => {
     if (isSystemBusy) return
@@ -36,7 +48,10 @@ export const TerminalAgent: React.FC<TerminalAgentProps> = ({
       const response = await fetch(`${API_BASE_URL}/agent/terminal/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, sessionId: 'terminal-session' })
+        body: JSON.stringify({
+          ...(commands && commands.length > 0 ? { commands } : { command }),
+          sessionId: 'terminal-session'
+        })
       })
       const data = await response.json()
       if (response.ok && data.success) {
@@ -45,14 +60,14 @@ export const TerminalAgent: React.FC<TerminalAgentProps> = ({
         setCwd(data.cwd)
         onPermissionGranted(true)
         if (onCommandExecuted) {
-          onCommandExecuted(command, true, data.output)
+          onCommandExecuted(commandLabel, true, data.output)
         }
       } else {
         setDecision('failed')
         setResult(data.output || 'Execution failed')
         onPermissionGranted(false)
         if (onCommandExecuted) {
-          onCommandExecuted(command, false, data.output || 'Execution failed')
+          onCommandExecuted(commandLabel, false, data.output || 'Execution failed')
         }
       }
     } catch (err: any) {
@@ -60,58 +75,29 @@ export const TerminalAgent: React.FC<TerminalAgentProps> = ({
       setResult(`Network Error: ${err.message}`)
       onPermissionGranted(false)
       if (onCommandExecuted) {
-        onCommandExecuted(command, false, `Network Error: ${err.message}`)
+        onCommandExecuted(commandLabel, false, `Network Error: ${err.message}`)
       }
-    }
-  }
-
-  const handleDeny = () => {
-    setDecision('denied')
-    setResult('Execution denied by user.')
-    onPermissionGranted(false)
-    if (onCommandExecuted) {
-      onCommandExecuted(command, false, 'Execution denied by user.')
     }
   }
 
   return (
     <div className="w-full max-w-xl p-3 space-y-2.5 my-1.5 text-foreground font-sans animate-[fadeIn_0.2s_ease-out]">
-      <div className="text-[11px] text-muted-foreground ">Requesting Permission</div>
+      <div className="text-[11px] text-muted-foreground ">
+        {decision === 'pending' || decision === 'executing'
+          ? 'Executing Command...'
+          : 'Terminal Command'}
+      </div>
 
       {/* Target command preview */}
       <div className="bg-black/30 border border-border/40 rounded-lg p-2.5 font-mono text-[11px] text-indigo-300">
         <span className="text-muted-foreground mr-1.5 select-none">$</span>
-        <span>{command}</span>
+        <span className="whitespace-pre-wrap">{commandLabel}</span>
       </div>
 
       {/* Decision / Output panel */}
-      {decision === 'pending' && (
-        <div className="flex flex-wrap gap-2 items-center">
-          <button
-            onClick={handleApprove}
-            disabled={isSystemBusy}
-            className={`px-3 py-1 rounded-md bg-indigo-600 text-white font-semibold text-[10px] flex items-center justify-center gap-1 transition-all ${
-              isSystemBusy ? 'opacity-40 cursor-not-allowed' : 'hover:bg-indigo-700 cursor-pointer'
-            }`}
-          >
-            <Check className="w-3 h-3" />
-            Approve & Run
-          </button>
-          <button
-            onClick={handleDeny}
-            disabled={isSystemBusy}
-            className={`px-3 py-1 rounded-md border border-border text-foreground font-semibold text-[10px] flex items-center justify-center gap-1 transition-all ${
-              isSystemBusy ? 'opacity-40 cursor-not-allowed' : 'hover:bg-accent cursor-pointer'
-            }`}
-          >
-            <X className="w-3 h-3" />
-            Deny
-          </button>
-          {isSystemBusy && (
-            <span className="text-[10px] text-amber-500 font-medium select-none animate-pulse">
-              Another command is running. Please wait...
-            </span>
-          )}
+      {decision === 'pending' && isSystemBusy && (
+        <div className="flex items-center gap-2 text-[10px] text-amber-500 font-medium select-none animate-pulse">
+          <span>Another command is running. Waiting to execute...</span>
         </div>
       )}
 

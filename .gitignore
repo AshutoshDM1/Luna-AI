@@ -29,3 +29,7 @@ pnpm-debug.log*
 Thumbs.db
 **/prisma/client
 **/client
+
+# Database files
+*.db
+
