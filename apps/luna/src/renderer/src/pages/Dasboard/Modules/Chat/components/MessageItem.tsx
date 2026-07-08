@@ -8,20 +8,24 @@ import {
   RotateCcw,
   MoreHorizontal,
   CornerDownRight,
-  Check
+  Check,
+  Globe
 } from 'lucide-react'
 import { TerminalAgent } from '@/Agents/Terminal/Terminal'
 
 interface MessageItemProps {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   content: string
   images?: string[]
   assistantName: string
+
   isThinking?: boolean
   isStreaming?: boolean
   onSuggestionClick?: (text: string) => void
   onPermissionGranted?: (execute: boolean) => void
   onCommandExecuted?: (command: string, success: boolean, output: string) => void
+  isExecutingCommand?: boolean
+  onStartExecuting?: () => void
 }
 
 export const MessageItem: React.FC<MessageItemProps> = ({
@@ -32,7 +36,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   isStreaming = false,
   onSuggestionClick,
   onPermissionGranted = () => {},
-  onCommandExecuted
+  onCommandExecuted,
+  isExecutingCommand = false,
+  onStartExecuting
 }) => {
   const isUser = role === 'user'
   const [copied, setCopied] = useState(false)
@@ -89,21 +95,128 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           </span>
         ) : (
           <div>
-            {content.includes('[EXECUTE_COMMAND:') ? (
-              (() => {
-                const parts = content.split(/(\[EXECUTE_COMMAND:[^\]]+\])/g)
+            {(() => {
+              // Support both new JSON format: [TOOL_CALL: {"name":"terminal",...}]
+              // and legacy format: [EXECUTE_COMMAND: cmd] for backward compat
+              // Use a greedy-to-last-brace pattern so nested/complex JSON works
+              const TOOL_CALL_RE = /\[TOOL_CALL:\s*(\{.+?\})\]/gs
+              const LEGACY_RE = /\[EXECUTE_COMMAND:([^\]]+)\]/g
+              const hasNewFormat = TOOL_CALL_RE.test(content)
+              const hasLegacyFormat = !hasNewFormat && LEGACY_RE.test(content)
+
+              const parseToolCallJson = (jsonStr: string) => {
+                const sanitized = jsonStr.replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+                return JSON.parse(sanitized)
+              }
+
+              if (hasNewFormat) {
+                // Split on [TOOL_CALL: {...}] boundaries
+                const parts = content.split(/(\[TOOL_CALL:\s*\{.+?\}\])/gs)
                 return parts.map((part, i) => {
-                  if (part.startsWith('[EXECUTE_COMMAND:') && part.endsWith(']')) {
-                    const command = part.slice(17, -1).trim()
-                    return (
-                      <TerminalAgent
-                        key={i}
-                        command={command}
-                        onPermissionGranted={onPermissionGranted}
-                        onCommandExecuted={onCommandExecuted}
-                      />
-                    )
+                  const tcMatch = part.match(/^\[TOOL_CALL:\s*(\{.+?\})\]$/s)
+                  if (tcMatch) {
+                    try {
+                      const tool = parseToolCallJson(tcMatch[1]) as {
+                        name: string
+                        command?: string
+                        query?: string
+                      }
+                      if (tool.name === 'terminal' && tool.command) {
+                        // Find matching TOOL_RESULT in the same message
+                        const allResultsRe = /\[TOOL_RESULT:\s*(\{.+?\})\]/gs
+                        let resultMatch: RegExpExecArray | null
+                        let preExecutedOutput: string | undefined
+                        let preExecutedSuccess = true
+                        allResultsRe.lastIndex = 0
+                        while ((resultMatch = allResultsRe.exec(content)) !== null) {
+                          try {
+                            const parsedRes = parseToolCallJson(resultMatch[1])
+                            if (
+                              parsedRes.name === 'terminal' &&
+                              parsedRes.command === tool.command
+                            ) {
+                              preExecutedOutput = parsedRes.output
+                              preExecutedSuccess = parsedRes.success !== false
+                              break
+                            }
+                          } catch {}
+                        }
+
+                        return (
+                          <TerminalAgent
+                            key={i}
+                            command={tool.command}
+                            onPermissionGranted={onPermissionGranted}
+                            onCommandExecuted={onCommandExecuted}
+                            isSystemBusy={isExecutingCommand}
+                            onStartExecuting={onStartExecuting}
+                            preExecutedOutput={preExecutedOutput}
+                            preExecutedSuccess={preExecutedSuccess}
+                          />
+                        )
+                      }
+                      if (tool.name === 'web_search' && tool.query) {
+                        // Find matching TOOL_RESULT in the same message
+                        const allResultsRe = /\[TOOL_RESULT:\s*(\{.+?\})\]/gs
+                        let resultMatch: RegExpExecArray | null
+                        let preExecutedOutput: string | undefined
+                        allResultsRe.lastIndex = 0
+                        while ((resultMatch = allResultsRe.exec(content)) !== null) {
+                          try {
+                            const parsedRes = parseToolCallJson(resultMatch[1])
+                            if (parsedRes.name === 'web_search' && parsedRes.query === tool.query) {
+                              preExecutedOutput = parsedRes.output
+                              break
+                            }
+                          } catch {}
+                        }
+
+                        if (preExecutedOutput) {
+                          return (
+                            <div
+                              key={i}
+                              className="flex flex-col gap-1.5 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs"
+                            >
+                              <div className="flex items-center gap-2 text-muted-foreground/70">
+                                <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                <span>
+                                  Searched web for{' '}
+                                  <span className="text-indigo-300 font-medium">
+                                    &ldquo;{tool.query}&rdquo;
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="pl-5.5 text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap font-sans">
+                                {preExecutedOutput}
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 my-2 px-3 py-2 rounded-lg bg-neutral-900/60 border border-border/40 text-xs text-muted-foreground/70"
+                          >
+                            <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0 animate-pulse" />
+                            <span>
+                              Searching web for{' '}
+                              <span className="text-indigo-300 font-medium">
+                                &ldquo;{tool.query}&rdquo;
+                              </span>
+                              &hellip;
+                            </span>
+                          </div>
+                        )
+                      }
+                    } catch {
+                      /* malformed JSON, fall through to text */
+                    }
                   }
+                  if (!part.trim()) return null
+                  // Clean out raw tool results from the text block
+                  const cleanedPart = part.replace(/\[TOOL_RESULT:\s*\{.+?\}\]/gs, '').trim()
+                  if (!cleanedPart) return null
                   return (
                     <ReactMarkdown
                       key={i}
@@ -142,49 +255,105 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                         hr: () => null
                       }}
                     >
+                      {cleanedPart}
+                    </ReactMarkdown>
+                  )
+                })
+              }
+
+              if (hasLegacyFormat) {
+                // Backward compat: old [EXECUTE_COMMAND: cmd] format
+                const parts = content.split(/(\[EXECUTE_COMMAND:[^\]]+\])/g)
+                return parts.map((part, i) => {
+                  if (part.startsWith('[EXECUTE_COMMAND:') && part.endsWith(']')) {
+                    const command = part.slice(17, -1).trim()
+                    return (
+                      <TerminalAgent
+                        key={i}
+                        command={command}
+                        onPermissionGranted={onPermissionGranted}
+                        onCommandExecuted={onCommandExecuted}
+                        isSystemBusy={isExecutingCommand}
+                        onStartExecuting={onStartExecuting}
+                      />
+                    )
+                  }
+                  return (
+                    <ReactMarkdown
+                      key={i}
+                      components={{
+                        p: ({ children }) => (
+                          <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+                        ),
+                        ul: ({ children }) => (
+                          <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>
+                        ),
+                        ol: ({ children }) => (
+                          <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
+                        ),
+                        li: ({ children }) => (
+                          <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
+                        ),
+                        code: ({ children }) => (
+                          <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
+                            {children}
+                          </code>
+                        ),
+                        pre: ({ children }) => (
+                          <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
+                            {children}
+                          </pre>
+                        ),
+                        hr: () => null
+                      }}
+                    >
                       {part}
                     </ReactMarkdown>
                   )
                 })
-              })()
-            ) : (
-              <ReactMarkdown
-                components={{
-                  p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
-                  ul: ({ children }) => (
-                    <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>
-                  ),
-                  ol: ({ children }) => (
-                    <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
-                  ),
-                  li: ({ children }) => (
-                    <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
-                  ),
-                  h1: ({ children }) => (
-                    <h1 className="text-lg font-bold mb-2 text-foreground">{children}</h1>
-                  ),
-                  h2: ({ children }) => (
-                    <h2 className="text-base font-bold mb-2 text-foreground">{children}</h2>
-                  ),
-                  h3: ({ children }) => (
-                    <h3 className="text-sm font-bold mb-1 text-foreground">{children}</h3>
-                  ),
-                  code: ({ children }) => (
-                    <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
-                      {children}
-                    </code>
-                  ),
-                  pre: ({ children }) => (
-                    <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
-                      {children}
-                    </pre>
-                  ),
-                  hr: () => null
-                }}
-              >
-                {content}
-              </ReactMarkdown>
-            )}
+              }
+              // Plain markdown fallback — no tool calls
+              return (
+                <ReactMarkdown
+                  components={{
+                    p: ({ children }) => (
+                      <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+                    ),
+                    ul: ({ children }) => (
+                      <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>
+                    ),
+                    ol: ({ children }) => (
+                      <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
+                    ),
+                    li: ({ children }) => (
+                      <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
+                    ),
+                    h1: ({ children }) => (
+                      <h1 className="text-lg font-bold mb-2 text-foreground">{children}</h1>
+                    ),
+                    h2: ({ children }) => (
+                      <h2 className="text-base font-bold mb-2 text-foreground">{children}</h2>
+                    ),
+                    h3: ({ children }) => (
+                      <h3 className="text-sm font-bold mb-1 text-foreground">{children}</h3>
+                    ),
+                    code: ({ children }) => (
+                      <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
+                        {children}
+                      </code>
+                    ),
+                    pre: ({ children }) => (
+                      <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
+                        {children}
+                      </pre>
+                    ),
+                    hr: () => null
+                  }}
+                >
+                  {content}
+                </ReactMarkdown>
+              )
+            })()}
             {/* Blinking cursor only on the live streaming bubble */}
             {isStreaming && (
               <span className="inline-block w-0.5 h-3.5 bg-foreground/70 ml-0.5 align-middle animate-pulse" />
@@ -193,83 +362,86 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         )}
       </div>
 
-      {content && !isStreaming && (
-        <div className="space-y-4 w-full">
-          {/* Action Toolbar */}
-          <div className="flex items-center gap-3 text-muted-foreground/60">
-            <button
-              onClick={handleCopy}
-              className="p-1 rounded-md hover:bg-accent hover:text-foreground transition-all cursor-pointer"
-              title="Copy response"
-            >
-              {copied ? (
-                <Check className="w-3.5 h-3.5 text-emerald-500" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
-              )}
-            </button>
+      {content &&
+        !isStreaming &&
+        !content.includes('[TOOL_CALL:') &&
+        !content.includes('[EXECUTE_COMMAND:') && (
+          <div className="space-y-4 w-full">
+            {/* Action Toolbar */}
+            <div className="flex items-center gap-3 text-muted-foreground/60">
+              <button
+                onClick={handleCopy}
+                className="p-1 rounded-md hover:bg-accent hover:text-foreground transition-all cursor-pointer"
+                title="Copy response"
+              >
+                {copied ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+              </button>
 
-            <button
-              className="p-1 rounded-md hover:bg-accent hover:text-foreground transition-all cursor-pointer"
-              title="Copy link"
-            >
-              <Link2 className="w-3.5 h-3.5" />
-            </button>
+              <button
+                className="p-1 rounded-md hover:bg-accent hover:text-foreground transition-all cursor-pointer"
+                title="Copy link"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+              </button>
 
-            <button
-              onClick={() => setLiked(true)}
-              className={`p-1 rounded-md hover:bg-accent transition-all cursor-pointer ${
-                liked === true ? 'text-indigo-500' : 'hover:text-foreground'
-              }`}
-              title="Good response"
-            >
-              <ThumbsUp className="w-3.5 h-3.5" />
-            </button>
+              <button
+                onClick={() => setLiked(true)}
+                className={`p-1 rounded-md hover:bg-accent transition-all cursor-pointer ${
+                  liked === true ? 'text-indigo-500' : 'hover:text-foreground'
+                }`}
+                title="Good response"
+              >
+                <ThumbsUp className="w-3.5 h-3.5" />
+              </button>
 
-            <button
-              onClick={() => setLiked(false)}
-              className={`p-1 rounded-md hover:bg-accent transition-all cursor-pointer ${
-                liked === false ? 'text-red-500' : 'hover:text-foreground'
-              }`}
-              title="Bad response"
-            >
-              <ThumbsDown className="w-3.5 h-3.5" />
-            </button>
+              <button
+                onClick={() => setLiked(false)}
+                className={`p-1 rounded-md hover:bg-accent transition-all cursor-pointer ${
+                  liked === false ? 'text-red-500' : 'hover:text-foreground'
+                }`}
+                title="Bad response"
+              >
+                <ThumbsDown className="w-3.5 h-3.5" />
+              </button>
 
-            <button
-              className="p-1 rounded-md hover:bg-accent hover:text-foreground transition-all cursor-pointer"
-              title="Regenerate"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+              <button
+                className="p-1 rounded-md hover:bg-accent hover:text-foreground transition-all cursor-pointer"
+                title="Regenerate"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
 
-            <button
-              className="p-1 rounded-md hover:bg-accent hover:text-foreground transition-all cursor-pointer"
-              title="More"
-            >
-              <MoreHorizontal className="w-3.5 h-3.5" />
-            </button>
+              <button
+                className="p-1 rounded-md hover:bg-accent hover:text-foreground transition-all cursor-pointer"
+                title="More"
+              >
+                <MoreHorizontal className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Suggestion Prompts */}
+            <div className="flex flex-col gap-2 pt-1 font-sans text-xs text-muted-foreground/80">
+              <button
+                onClick={() => onSuggestionClick?.('Tell me about your interests')}
+                className="flex items-center gap-1.5 hover:text-indigo-400 transition-colors w-fit text-left cursor-pointer"
+              >
+                <CornerDownRight className="w-3 h-3 text-muted-foreground/40" />
+                <span>Tell me about your interests</span>
+              </button>
+              <button
+                onClick={() => onSuggestionClick?.('Share your hobbies or passions')}
+                className="flex items-center gap-1.5 hover:text-indigo-400 transition-colors w-fit text-left cursor-pointer"
+              >
+                <CornerDownRight className="w-3 h-3 text-muted-foreground/40" />
+                <span>Share your hobbies or passions</span>
+              </button>
+            </div>
           </div>
-
-          {/* Suggestion Prompts */}
-          <div className="flex flex-col gap-2 pt-1 font-sans text-xs text-muted-foreground/80">
-            <button
-              onClick={() => onSuggestionClick?.('Tell me about your interests')}
-              className="flex items-center gap-1.5 hover:text-indigo-400 transition-colors w-fit text-left cursor-pointer"
-            >
-              <CornerDownRight className="w-3 h-3 text-muted-foreground/40" />
-              <span>Tell me about your interests</span>
-            </button>
-            <button
-              onClick={() => onSuggestionClick?.('Share your hobbies or passions')}
-              className="flex items-center gap-1.5 hover:text-indigo-400 transition-colors w-fit text-left cursor-pointer"
-            >
-              <CornerDownRight className="w-3 h-3 text-muted-foreground/40" />
-              <span>Share your hobbies or passions</span>
-            </button>
-          </div>
-        </div>
-      )}
+        )}
     </div>
   )
 }

@@ -4,7 +4,6 @@ import {
   Infinity,
   ArrowUp,
   AtSign,
-  MessageSquare,
   Sparkles,
   Bot,
   Square,
@@ -40,7 +39,7 @@ interface ChatProps {
 }
 
 interface Message {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   content: string
   images?: string[]
 }
@@ -60,9 +59,15 @@ export const Chat: React.FC<ChatProps> = ({
   const [isThinking, setIsThinking] = useState(false)
   const [streamingMessage, setStreamingMessage] = useState('')
   const [selectedModel, setSelectedModel] = useState(model || 'gemma3:4b')
-  const [chatMode, setChatMode] = useState<'agent' | 'ask'>('ask')
+  const [chatMode] = useState<'agent' | 'ask'>('agent')
+  const [isExecutingCommand, setIsExecutingCommand] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  // Always-fresh ref to messages — avoids stale closure in async callbacks
+  const messagesRef = useRef<Message[]>(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   // Attached files state
   interface AttachedFile {
@@ -130,7 +135,12 @@ export const Chat: React.FC<ChatProps> = ({
 
   const supportsVision = (modelName: string): boolean => {
     const lower = modelName.toLowerCase()
-    return lower.includes('vision') || lower.includes('vl')
+    return (
+      lower.includes('vision') ||
+      lower.includes('vl') ||
+      lower.includes('gemma3') ||
+      lower.includes('gemma')
+    )
   }
 
   // File picker handler
@@ -179,14 +189,17 @@ export const Chat: React.FC<ChatProps> = ({
 
     try {
       await ApiClient.post(`/chat/sessions/${currentSessionId}/messages`, {
-        role: 'user',
+        role: 'system',
         content: feedbackContent
       })
     } catch (err) {
       console.error('Failed to save agent feedback message:', err)
     }
 
-    const updatedMessages: Message[] = [...messages, { role: 'user', content: feedbackContent }]
+    const updatedMessages: Message[] = [
+      ...messagesRef.current,
+      { role: 'system', content: feedbackContent }
+    ]
     setMessages(updatedMessages)
 
     const abortController = new AbortController()
@@ -338,7 +351,15 @@ export const Chat: React.FC<ChatProps> = ({
       .filter((file) => file.type.startsWith('image/'))
       .map((file) => file.dataUrl)
 
-    const userMsgText = inputText.trim()
+    const textFiles = attachedFiles.filter((file) => !file.type.startsWith('image/'))
+    let userMsgText = inputText.trim()
+    if (textFiles.length > 0) {
+      const fileContentsSection = textFiles
+        .map((file) => `\n\n### Attached File: ${file.name}\n\`\`\`\n${file.dataUrl}\n\`\`\``)
+        .join('')
+      userMsgText += fileContentsSection
+    }
+
     setInputText('')
     setAttachedFiles([])
 
@@ -630,32 +651,10 @@ export const Chat: React.FC<ChatProps> = ({
                   <Paperclip className="w-4.5 h-4.5" />
                 </button>
 
-                {/* Chat Mode Toggle (Ask vs Agent) */}
-                <div className="flex items-center p-0.5 rounded-lg text-[11px] font-medium select-none">
-                  <button
-                    type="button"
-                    onClick={() => setChatMode('ask')}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md transition-all cursor-pointer ${
-                      chatMode === 'ask'
-                        ? 'text-indigo-400 font-semibold'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>Ask</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setChatMode('agent')}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-md transition-all cursor-pointer ${
-                      chatMode === 'agent'
-                        ? 'text-green-400 font-semibold'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <Bot className="w-3.5 h-3.5" />
-                    <span>Agent</span>
-                  </button>
+                {/* Chat Mode Status (Always Agent) */}
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/25 text-green-400 font-semibold text-[10px] select-none shadow-sm">
+                  <Bot className="w-3.5 h-3.5" />
+                  <span>Agent Mode</span>
                 </div>
                 {/* Research Button */}
                 <button
@@ -812,14 +811,18 @@ export const Chat: React.FC<ChatProps> = ({
               isThinking={isThinking}
               streamingMessage={streamingMessage}
               onSuggestionClick={setInputText}
+              isExecutingCommand={isExecutingCommand}
+              onStartExecuting={() => setIsExecutingCommand(true)}
               onPermissionGranted={(execute) => {
                 console.log('Terminal agent permission decision:', execute)
               }}
-              onCommandExecuted={async (command, success, output) => {
+              onCommandExecuted={async (_command, _success, output) => {
+                setIsExecutingCommand(false)
                 if (chatMode === 'agent') {
-                  const feedback = success
-                    ? `[SYSTEM_RESULT: Output:\n${output}]`
-                    : `[SYSTEM_RESULT: Terminal command execution denied by user.]`
+                  const feedback =
+                    output === 'Execution denied by user.' || output === 'Execution denied by user'
+                      ? `[SYSTEM_RESULT: Terminal command execution denied by user.]`
+                      : `[SYSTEM_RESULT: Output:\n${output}]`
                   await handleAgentFeedback(feedback)
                 }
               }}

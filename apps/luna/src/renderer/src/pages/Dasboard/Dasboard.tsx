@@ -14,7 +14,7 @@ import Settings from './Modules/Settings/Settings'
 import ChatSidebar from './components/ChatSidebar'
 
 interface Message {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   content: string
 }
 

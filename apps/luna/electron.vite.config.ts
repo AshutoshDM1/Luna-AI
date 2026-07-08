@@ -17,6 +17,20 @@ const copyPrismaClient = () => ({
   }
 })
 
+const copyAgentPrompt = () => ({
+  name: 'copy-agent-prompt',
+  writeBundle() {
+    const src = resolve(__dirname, 'src/backend/src/skills/agent_system_prompt.txt')
+    const destDir = resolve(__dirname, 'out/skills')
+    const dest = resolve(destDir, 'agent_system_prompt.txt')
+    if (fs.existsSync(src)) {
+      fs.mkdirSync(destDir, { recursive: true })
+      fs.copyFileSync(src, dest)
+      console.log('✅ Agent system prompt copied to out/skills/agent_system_prompt.txt')
+    }
+  }
+})
+
 export default defineConfig({
   main: {
     build: {
@@ -24,7 +38,7 @@ export default defineConfig({
         external: ['better-sqlite3', '@prisma/adapter-better-sqlite3', /prisma\/client/]
       }
     },
-    plugins: [copyPrismaClient()]
+    plugins: [copyPrismaClient(), copyAgentPrompt()]
   },
   preload: {},
   renderer: {

@@ -23,7 +23,7 @@ interface StepIntegrationsProps {
 }
 
 export const StepIntegrations: React.FC<StepIntegrationsProps> = ({
-  assistantName,
+  assistantName: _assistantName,
   launchOnStartup,
   setLaunchOnStartup,
   hotkeyEnabled,
