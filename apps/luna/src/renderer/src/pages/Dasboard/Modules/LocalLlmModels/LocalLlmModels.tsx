@@ -1,126 +1,199 @@
 import React, { useState, useEffect } from 'react'
 import { ModelCard, LLMModel } from './Components/ModelCard'
+import { api, API_BASE_URL } from '@/services/api'
+
+const CATALOG: Omit<LLMModel, 'status'>[] = [
+  {
+    id: 'gemma3:4b',
+    name: 'Gemma 3 4B',
+    developer: 'Google',
+    size: '2.5 GB',
+    params: '4 Billion',
+    useCase:
+      'Google-optimized compact offline brain. Balanced speed and memory efficiency on consumer machines.',
+    speed: '~62 t/s'
+  },
+  {
+    id: 'llama3.2-vision:11b',
+    name: 'Llama 3.2 Vision (11B)',
+    developer: 'Meta AI',
+    size: '7.9 GB',
+    params: '11 Billion',
+    useCase:
+      "Meta's multimodal vision model. Understands images and text, balanced and powerful for complex tasks.",
+    speed: '~28 t/s'
+  },
+  {
+    id: 'qwen2.5-vl:3b',
+    name: 'Qwen 2.5 VL (3B)',
+    developer: 'Alibaba Group',
+    size: '2.1 GB',
+    params: '3 Billion',
+    useCase:
+      "Alibaba's vision-language model. Lightweight yet highly capable at reasoning and visual understanding.",
+    speed: '~55 t/s'
+  }
+]
 
 export const LocalLlmModels: React.FC = () => {
-  const [models, setModels] = useState<LLMModel[]>([
-    {
-      id: 'gemma3:4b',
-      name: 'Gemma 3 (4B)',
-      developer: 'Google',
-      size: '2.5 GB',
-      params: '4 Billion',
-      status: 'active',
-      useCase:
-        'Primary compact model. Optimally balanced for speed and memory efficiency on consumer machines.',
-      speed: '~62 t/s'
-    },
-    {
-      id: 'llama3',
-      name: 'Llama 3 (8B Instruct)',
-      developer: 'Meta AI',
-      size: '4.7 GB',
-      params: '8 Billion',
-      status: 'installed',
-      useCase:
-        'Balanced and fast. Perfect for general assistant tasks, email drafting, and summarization.',
-      speed: '~45 t/s'
-    },
-    {
-      id: 'gemma2',
-      name: 'Gemma 2 (9B Instruct)',
-      developer: 'Google',
-      size: '5.4 GB',
-      params: '9 Billion',
-      status: 'installed',
-      useCase:
-        'Highly optimized for text reasoning, creative writing, and complex multi-turn dialogs.',
-      speed: '~38 t/s'
-    },
-    {
-      id: 'qwen2.5',
-      name: 'Qwen 2.5 (7B Coder)',
-      developer: 'Alibaba Group',
-      size: '4.3 GB',
-      params: '7 Billion',
-      status: 'not-downloaded',
-      useCase:
-        'Elite coding copilot. Extremely proficient at writing, debugging, and parsing source code.',
-      speed: '~48 t/s'
-    },
-    {
-      id: 'phi3',
-      name: 'Phi-3 (3.8B Mini)',
-      developer: 'Microsoft',
-      size: '2.2 GB',
-      params: '3.8 Billion',
-      status: 'not-downloaded',
-      useCase:
-        'Ultra-lightweight. Perfect for lower-end machines or background automation routines.',
-      speed: '~65 t/s'
-    }
-  ])
+  const [models, setModels] = useState<LLMModel[]>(
+    CATALOG.map((m) => ({ ...m, status: 'not-downloaded' }))
+  )
 
-  // Sync active model state with localStorage settings
+  // Check which models are installed and what the active model is on mount
   useEffect(() => {
-    try {
-      const dataStr = localStorage.getItem('luna_setup')
-      if (dataStr) {
-        const setupData = JSON.parse(dataStr)
-        const activeModelId = setupData.model
-
-        setModels((prev) =>
-          prev.map((model) => {
-            if (model.id === activeModelId) {
-              return { ...model, status: 'active' }
-            } else if (model.status === 'active') {
-              // If it was active but is no longer the active one in setup data, downgrade to installed
-              return { ...model, status: 'installed' }
-            }
-            return model
-          })
-        )
+    const initModels = async () => {
+      // Get active model from localStorage
+      let activeModelId: string | null = null
+      try {
+        const dataStr = localStorage.getItem('luna_setup')
+        if (dataStr) {
+          activeModelId = JSON.parse(dataStr).model ?? null
+        }
+      } catch {
+        /* ignore */
       }
-    } catch (e) {
-      console.error(e)
+
+      // Query Ollama for installed models
+      let installedIds: Set<string> = new Set()
+      try {
+        const res = await api.get<{ models: { name: string }[] }>('/ollama/models')
+        if (res.data?.models) {
+          installedIds = new Set(res.data.models.map((m) => m.name))
+        }
+      } catch {
+        /* Ollama may be offline — leave all as not-downloaded */
+      }
+
+      setModels(
+        CATALOG.map((m) => {
+          const normalize = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '')
+          const activeNormalized = activeModelId ? normalize(activeModelId) : ''
+          const currentNormalized = normalize(m.id)
+
+          const isInstalled = Array.from(installedIds).some(
+            (installedName) => normalize(installedName) === currentNormalized
+          )
+
+          if (activeNormalized === currentNormalized) return { ...m, status: 'active' }
+          if (isInstalled) return { ...m, status: 'installed' }
+          return { ...m, status: 'not-downloaded' }
+        })
+      )
     }
+
+    initModels()
   }, [])
 
   const handleActivate = (id: string) => {
-    // 1. Update localStorage
+    // Persist to localStorage
     try {
       const dataStr = localStorage.getItem('luna_setup')
       if (dataStr) {
-        const setupData = JSON.parse(dataStr)
-        setupData.model = id
-        localStorage.setItem('luna_setup', JSON.stringify(setupData))
+        const setup = JSON.parse(dataStr)
+        setup.model = id
+        localStorage.setItem('luna_setup', JSON.stringify(setup))
       }
-    } catch (e) {
-      console.error(e)
+    } catch {
+      /* ignore */
     }
 
-    // 2. Update local state
     setModels((prev) =>
-      prev.map((model) => {
-        if (model.id === id) {
-          return { ...model, status: 'active' }
-        } else if (model.status === 'active') {
-          return { ...model, status: 'installed' }
-        }
-        return model
+      prev.map((m) => {
+        if (m.id === id) return { ...m, status: 'active' }
+        if (m.status === 'active') return { ...m, status: 'installed' }
+        return m
       })
     )
   }
 
   const handleDownload = (id: string) => {
-    // Mock download action by marking as installed
+    // Mark as downloading
     setModels((prev) =>
-      prev.map((model) => {
-        if (model.id === id) {
-          return { ...model, status: 'installed' }
-        }
-        return model
-      })
+      prev.map((m) =>
+        m.id === id
+          ? { ...m, status: 'downloading', downloadProgress: 0, downloadLog: 'Connecting...' }
+          : m
+      )
     )
+
+    const eventSource = new EventSource(
+      `${API_BASE_URL}/ollama/pull?model=${encodeURIComponent(id)}`
+    )
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+
+        if (data.status === 'progress') {
+          const cleanLog = data.log
+            .replace(
+              /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
+              ''
+            )
+            .trim()
+
+          if (!cleanLog) return
+
+          const percentMatch = cleanLog.match(/(\d+)%/)
+          const percent = percentMatch ? parseInt(percentMatch[1], 10) : undefined
+
+          setModels((prev) =>
+            prev.map((m) =>
+              m.id === id
+                ? {
+                    ...m,
+                    status: 'downloading',
+                    downloadLog: cleanLog,
+                    downloadProgress: percent ?? m.downloadProgress
+                  }
+                : m
+            )
+          )
+        } else if (data.status === 'success') {
+          eventSource.close()
+          setModels((prev) =>
+            prev.map((m) =>
+              m.id === id
+                ? { ...m, status: 'installed', downloadProgress: undefined, downloadLog: undefined }
+                : m
+            )
+          )
+        } else if (data.status === 'error') {
+          eventSource.close()
+          setModels((prev) =>
+            prev.map((m) =>
+              m.id === id
+                ? {
+                    ...m,
+                    status: 'not-downloaded',
+                    downloadProgress: undefined,
+                    downloadLog: undefined
+                  }
+                : m
+            )
+          )
+        }
+      } catch {
+        /* parse error — ignore */
+      }
+    }
+
+    eventSource.onerror = () => {
+      eventSource.close()
+      setModels((prev) =>
+        prev.map((m) =>
+          m.id === id
+            ? {
+                ...m,
+                status: 'not-downloaded',
+                downloadProgress: undefined,
+                downloadLog: undefined
+              }
+            : m
+        )
+      )
+    }
   }
 
   return (
@@ -134,7 +207,7 @@ export const LocalLlmModels: React.FC = () => {
 
       <div className="w-full z-10 space-y-4 animate-[fadeIn_0.3s_ease-out]">
         {/* Header Section */}
-        <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 ">
+        <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
           <div>
             <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight">Local LLM Models</h2>
             <p className="text-xs text-muted-foreground mt-0.5">

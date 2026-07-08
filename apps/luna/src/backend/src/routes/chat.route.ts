@@ -1,5 +1,7 @@
-import { Router } from 'express'
+import { IRouter, Router } from 'express'
 import http from 'http'
+import fs from 'fs'
+import path from 'path'
 import { prisma } from '../db/db'
 import {
   getSessions,
@@ -10,7 +12,7 @@ import {
   addMessageToSession
 } from '../controllers/chat/session.controller'
 
-const router = Router()
+const router: IRouter = Router()
 
 // Reuse HTTP Agent for connection keep-alive to Ollama
 const ollamaAgent = new http.Agent({
@@ -29,14 +31,37 @@ router.post('/sessions/:id/messages', addMessageToSession)
 
 // Chat inference route - proxies streaming from local Ollama to frontend via SSE
 router.post('/', (req, res) => {
-  const { model = 'gemma3:4b', messages = [], systemPrompt = '', sessionId } = req.body
+  const { model = 'gemma3:4b', messages = [], systemPrompt = '', sessionId, mode } = req.body
   console.log(
-    `[backend] POST /api/chat model=${model} messages.length=${messages.length} sessionId=${sessionId}`
+    `[backend] POST /api/chat model=${model} messages.length=${messages.length} sessionId=${sessionId} mode=${mode}`
   )
 
-  const ollamaMessages = [...messages]
-  if (systemPrompt) {
-    ollamaMessages.unshift({ role: 'system', content: systemPrompt })
+  const ollamaMessages = messages.map((m: any) => {
+    const cleanedMessage: any = { role: m.role, content: m.content }
+    if (m.images && Array.isArray(m.images)) {
+      cleanedMessage.images = m.images.map((img: string) => {
+        if (img.startsWith('data:image/')) {
+          const parts = img.split(',')
+          return parts[1] || img
+        }
+        return img
+      })
+    }
+    return cleanedMessage
+  })
+  let activeSystemPrompt = systemPrompt
+
+  if (mode === 'agent') {
+    try {
+      const promptPath = path.join(__dirname, '../skills/agent_system_prompt.txt')
+      activeSystemPrompt = fs.readFileSync(promptPath, 'utf8')
+    } catch (err: any) {
+      console.error('[backend] Failed to read agent system prompt file:', err.message)
+    }
+  }
+
+  if (activeSystemPrompt) {
+    ollamaMessages.unshift({ role: 'system', content: activeSystemPrompt })
   }
 
   const postData = JSON.stringify({
@@ -121,11 +146,15 @@ router.post('/', (req, res) => {
         const lastUserMessage = messages[messages.length - 1]
         if (lastUserMessage && lastUserMessage.role === 'user') {
           try {
+            const dbContent =
+              lastUserMessage.images && lastUserMessage.images.length > 0
+                ? JSON.stringify({ text: lastUserMessage.content, images: lastUserMessage.images })
+                : lastUserMessage.content
             await prisma.chatMessage.create({
               data: {
                 sessionId,
                 role: 'user',
-                content: lastUserMessage.content
+                content: dbContent
               }
             })
             await prisma.chatMessage.create({

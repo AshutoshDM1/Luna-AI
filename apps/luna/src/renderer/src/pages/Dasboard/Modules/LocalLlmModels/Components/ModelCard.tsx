@@ -1,5 +1,15 @@
 import React from 'react'
-import { Download, CheckCircle, Play, Layers, HardDrive, ShieldAlert } from 'lucide-react'
+import {
+  Download,
+  CheckCircle,
+  Play,
+  Layers,
+  HardDrive,
+  Zap,
+  Loader2,
+  Loader,
+  Check
+} from 'lucide-react'
 
 export interface LLMModel {
   id: string
@@ -7,9 +17,11 @@ export interface LLMModel {
   developer: string
   size: string
   params: string
-  status: 'active' | 'installed' | 'not-downloaded'
+  status: 'active' | 'installed' | 'not-downloaded' | 'downloading'
   useCase: string
   speed: string
+  downloadProgress?: number // 0-100
+  downloadLog?: string
 }
 
 interface ModelCardProps {
@@ -32,6 +44,13 @@ export const ModelCard: React.FC<ModelCardProps> = ({ model, onActivate, onDownl
         return (
           <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/25 text-[9px] font-bold uppercase tracking-wider">
             Installed
+          </span>
+        )
+      case 'downloading':
+        return (
+          <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/25 text-[9px] font-bold uppercase tracking-wider flex items-center gap-1">
+            <Loader2 className="w-2.5 h-2.5 animate-spin" />
+            Downloading
           </span>
         )
       case 'not-downloaded':
@@ -75,10 +94,28 @@ export const ModelCard: React.FC<ModelCardProps> = ({ model, onActivate, onDownl
             <span>Size: {model.size}</span>
           </div>
           <div className="flex items-center gap-1.5 text-muted-foreground col-span-2">
-            <ShieldAlert className="w-3 h-3 text-amber-500/70" />
-            <span>Evaluation speed: {model.speed}</span>
+            <Zap className="w-3 h-3 text-amber-500/70" />
+            <span>Speed: {model.speed}</span>
           </div>
         </div>
+
+        {/* Download Progress Bar */}
+        {model.status === 'downloading' && (
+          <div className="space-y-1.5 pt-1">
+            <div className="flex justify-between text-[10px] text-muted-foreground">
+              <span className="truncate max-w-[70%]">{model.downloadLog || 'Starting...'}</span>
+              <span className="font-mono font-bold text-blue-400">
+                {model.downloadProgress !== undefined ? `${model.downloadProgress}%` : '...'}
+              </span>
+            </div>
+            <div className="w-full bg-accent border border-border h-1.5 rounded-full overflow-hidden">
+              <div
+                className="bg-indigo-500 h-full transition-all duration-300 rounded-full"
+                style={{ width: `${model.downloadProgress || 0}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action Footer */}
@@ -88,7 +125,7 @@ export const ModelCard: React.FC<ModelCardProps> = ({ model, onActivate, onDownl
             disabled
             className="w-full py-2 rounded-xl bg-primary/10 text-primary font-bold text-xs cursor-default flex items-center justify-center gap-1.5"
           >
-            <CheckCircle className="w-3.5 h-3.5 fill-current" />
+            <Check className="size-4" />
             Currently Active
           </button>
         )}
@@ -100,6 +137,16 @@ export const ModelCard: React.FC<ModelCardProps> = ({ model, onActivate, onDownl
           >
             <Play className="w-3 h-3 fill-current" />
             Activate Brain
+          </button>
+        )}
+
+        {model.status === 'downloading' && (
+          <button
+            disabled
+            className="w-full py-2 rounded-md bg-blue-500/10 text-blue-400 font-medium text-xs cursor-default flex items-center justify-center gap-1.5"
+          >
+            <Loader className="w-3.5 h-3.5 animate-spin" />
+            Downloading...
           </button>
         )}
 

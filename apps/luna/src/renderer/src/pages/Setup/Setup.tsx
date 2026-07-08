@@ -25,12 +25,19 @@ interface SetupProps {
 const MODELS = [
   {
     id: 'gemma3:4b',
-    name: 'Gemma 3 (4B)',
-    description: 'Google-optimized compact offline brain (Primary)'
+    name: 'Gemma 3 4B',
+    description: 'Google-optimized compact offline brain'
   },
-  { id: 'llama3', name: 'Llama 3 (8B)', description: 'Balanced and fast for general tasks' },
-  { id: 'gemma2', name: 'Gemma 2 (9B)', description: 'Google-optimized for creative prompts' },
-  { id: 'qwen2.5', name: 'Qwen 2.5 (7B)', description: 'Highly competent at coding & reasoning' }
+  {
+    id: 'llama3.2-vision:11b',
+    name: 'Llama 3.2 Vision (11B)',
+    description: "Meta's multimodal vision model, balanced and powerful"
+  },
+  {
+    id: 'qwen2.5-vl:3b',
+    name: 'Qwen 2.5 VL (3B)',
+    description: "Alibaba's vision-language model, highly capable for reasoning"
+  }
 ]
 
 export const Setup: React.FC<SetupProps> = ({ onComplete, onBack }) => {
@@ -150,12 +157,8 @@ export const Setup: React.FC<SetupProps> = ({ onComplete, onBack }) => {
           {currentStep === 2 && (
             <div className="space-y-1.5 animate-[fadeIn_0.4s_ease-out]">
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white leading-tight">
-                Keep your muscle memory
+                Preferences & Integrations
               </h1>
-              <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
-                Configure launcher shortcuts and automatic startup properties to integrate Luna
-                seamlessly.
-              </p>
             </div>
           )}
 

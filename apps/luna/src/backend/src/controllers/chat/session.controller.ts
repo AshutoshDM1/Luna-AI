@@ -85,7 +85,24 @@ export const getSessionMessages = async (req: Request, res: Response): Promise<v
       where: { sessionId: id as string },
       orderBy: { createdAt: 'asc' }
     })
-    res.json(messages)
+
+    const parsedMessages = messages.map((msg) => {
+      if (msg.content.startsWith('{"text":')) {
+        try {
+          const parsed = JSON.parse(msg.content)
+          return {
+            ...msg,
+            content: parsed.text,
+            images: parsed.images
+          }
+        } catch {
+          return msg
+        }
+      }
+      return msg
+    })
+
+    res.json(parsedMessages)
   } catch (error) {
     res.status(500).json({ error: (error as Error).message })
   }

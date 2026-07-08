@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { CheckCircle2, Loader2, Download, Terminal, Sparkles } from 'lucide-react'
-import axios from 'axios'
+import { api, API_BASE_URL } from '@/services/api'
 
 interface StepOllamaProps {
   model: string
@@ -25,7 +25,7 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
 
   const detectPlatform = async () => {
     try {
-      const res = await axios.get('http://localhost:3001/api/ollama/platform')
+      const res = await api.get('/ollama/platform')
       setPlatform(res.data.platform)
     } catch (e) {
       console.error(e)
@@ -35,7 +35,7 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
   const checkOllamaStatus = async () => {
     setIsChecking(true)
     try {
-      const res = await axios.get('http://localhost:3001/api/ollama/check')
+      const res = await api.get('/ollama/check')
       setHasOllama(res.data.installed)
     } catch (e) {
       console.error(e)
@@ -49,7 +49,7 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
     setIsInstalling(true)
     setInstallStatus('Downloading Ollama installer from official site...')
     try {
-      const res = await axios.post('http://localhost:3001/api/ollama/install')
+      const res = await api.post('/ollama/install')
       if (res.data.manual) {
         setInstallStatus('Opening browser download page...')
       } else {
@@ -58,7 +58,7 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
 
       const interval = setInterval(async () => {
         try {
-          const checkRes = await axios.get('http://localhost:3001/api/ollama/check')
+          const checkRes = await api.get('/ollama/check')
           if (checkRes.data.installed) {
             setHasOllama(true)
             setInstallStatus('Ollama installed successfully!')
@@ -85,7 +85,7 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
     setPullLogs([])
     setDownloadPercent(0)
 
-    const eventSource = new EventSource(`http://localhost:3001/api/ollama/pull?model=${model}`)
+    const eventSource = new EventSource(`${API_BASE_URL}/ollama/pull?model=${model}`)
 
     eventSource.onmessage = (event) => {
       try {
@@ -203,11 +203,10 @@ export const StepOllama: React.FC<StepOllamaProps> = ({ model, onComplete }) => 
         </div>
       ) : (
         <div className="space-y-4 pt-1">
-          <div className="p-4 border border-emerald-500/25 bg-emerald-500/5 rounded-xl flex gap-3 text-xs">
-            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-            <div className="space-y-0.5 leading-relaxed text-muted-foreground">
-              <p className="font-semibold text-foreground">Ollama installation verified</p>
-              <p>Ready to initialize local LLM backend engine.</p>
+          <div className="p-4 border border-emerald-500/25 bg-emerald-500/15 rounded-md flex items-center gap-3 text-xs">
+            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+            <div className="leading-relaxed ">
+              <p className="font-medium">Ollama installation verified</p>
             </div>
           </div>
 

@@ -6,3 +6,4 @@ out
 *.log*
 prisma/client
 **/client
+./src/db/*

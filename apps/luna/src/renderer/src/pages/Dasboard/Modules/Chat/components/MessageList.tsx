@@ -4,6 +4,7 @@ import { MessageItem } from './MessageItem'
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  images?: string[]
 }
 
 interface MessageListProps {
@@ -13,6 +14,8 @@ interface MessageListProps {
   isThinking: boolean
   streamingMessage: string
   onSuggestionClick?: (text: string) => void
+  onPermissionGranted?: (execute: boolean) => void
+  onCommandExecuted?: (command: string, success: boolean, output: string) => void
 }
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -21,7 +24,9 @@ export const MessageList: React.FC<MessageListProps> = ({
   isStreaming,
   isThinking,
   streamingMessage,
-  onSuggestionClick
+  onSuggestionClick,
+  onPermissionGranted,
+  onCommandExecuted
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -36,8 +41,11 @@ export const MessageList: React.FC<MessageListProps> = ({
           key={index}
           role={msg.role}
           content={msg.content}
+          images={msg.images}
           assistantName={assistantName}
           onSuggestionClick={onSuggestionClick}
+          onPermissionGranted={onPermissionGranted}
+          onCommandExecuted={onCommandExecuted}
         />
       ))}
 

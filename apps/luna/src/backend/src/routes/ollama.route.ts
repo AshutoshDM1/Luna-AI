@@ -1,9 +1,8 @@
-//ts-ignore
-import { Router } from 'express'
+import { Router, IRouter } from 'express'
 import { exec, spawn } from 'child_process'
 import { join } from 'path'
 
-const router = Router()
+const router: IRouter = Router()
 
 // Helper to get environment PATH appended with standard Ollama install directories
 const getOllamaEnv = (): NodeJS.ProcessEnv => {
@@ -41,6 +40,53 @@ router.get('/check', (_req, res) => {
   })
 })
 
+// 2b. Check if Ollama HTTP server is actively running (hits localhost:11434)
+router.get('/status', async (_req, res) => {
+  try {
+    const http = await import('http')
+    const req = http.get('http://127.0.0.1:11434/', (r) => {
+      res.json({ running: true, statusCode: r.statusCode })
+      r.resume()
+    })
+    req.setTimeout(2000, () => {
+      req.destroy()
+      res.json({ running: false, reason: 'timeout' })
+    })
+    req.on('error', () => {
+      res.json({ running: false, reason: 'connection_refused' })
+    })
+  } catch {
+    res.json({ running: false, reason: 'error' })
+  }
+})
+
+// 2c. List installed Ollama models via Ollama REST API
+router.get('/models', async (_req, res) => {
+  try {
+    const http = await import('http')
+    let body = ''
+    const req = http.get('http://127.0.0.1:11434/api/tags', (r) => {
+      r.on('data', (chunk: Buffer) => {
+        body += chunk.toString()
+      })
+      r.on('end', () => {
+        try {
+          res.json(JSON.parse(body))
+        } catch {
+          res.json({ models: [] })
+        }
+      })
+    })
+    req.setTimeout(3000, () => {
+      req.destroy()
+      res.json({ models: [] })
+    })
+    req.on('error', () => res.json({ models: [] }))
+  } catch {
+    res.json({ models: [] })
+  }
+})
+
 // 3. Install Ollama using terminal commands only
 router.post('/install', async (_req, res) => {
   if (process.platform === 'win32') {
@@ -70,7 +116,7 @@ router.get('/pull', (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
 
-  const proc = spawn('ollama', ['pull', String(model)], { env: getOllamaEnv() })
+  const proc = spawn('ollama', ['pull', String(model)], { env: getOllamaEnv(), shell: true })
 
   proc.stdout.on('data', (data) => {
     res.write(`data: ${JSON.stringify({ status: 'progress', log: data.toString().trim() })}\n\n`)

@@ -1,7 +1,7 @@
-import { Router } from 'express'
+import { IRouter, Router } from 'express'
 import { getUsers, syncUser, updateUser, deleteUser } from '../controllers/user/user.controller'
 
-const router = Router()
+const router: IRouter = Router()
 
 router.get('/', getUsers)
 router.post('/sync', syncUser)

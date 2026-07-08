@@ -3,6 +3,7 @@ import { Settings as SettingsIcon } from 'lucide-react'
 import { BrandLogo } from '@/shared/Logos/BrandLogo'
 import { useDashboardNavigation } from '@/hooks/useDashboardNavigation'
 import ApiClient from '@/lib/apiClient'
+import { api } from '@/services/api'
 
 // Import Modules from nested subfolders
 import Chat from './Modules/Chat/Chat'
@@ -65,6 +66,22 @@ export const Dashboard: React.FC<DashboardProps> = () => {
   const [editTitleText, setEditTitleText] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [isChatListCollapsed, setIsChatListCollapsed] = useState(false)
+  const [ollamaRunning, setOllamaRunning] = useState<boolean | null>(null)
+
+  // Poll Ollama running status every 5 seconds
+  useEffect(() => {
+    const checkOllama = async () => {
+      try {
+        const res = await api.get('/ollama/status')
+        setOllamaRunning(res.data.running === true)
+      } catch {
+        setOllamaRunning(false)
+      }
+    }
+    checkOllama()
+    const interval = setInterval(checkOllama, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Fetch recent sessions on mount
   const fetchSessions = useCallback(async () => {
@@ -210,8 +227,8 @@ export const Dashboard: React.FC<DashboardProps> = () => {
           </nav>
         </div>
 
-        {/* Sidebar Footer (Settings button instead of Exit) */}
-        <div className="border-t border-border pt-4 shrink-0">
+        {/* Sidebar Footer (Settings button + Ollama status) */}
+        <div className="border-t border-border pt-4 shrink-0 space-y-2">
           <button
             onClick={() => changeTab('settings')}
             className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
@@ -223,6 +240,26 @@ export const Dashboard: React.FC<DashboardProps> = () => {
             <SettingsIcon className="w-4 h-4" />
             <span>Settings</span>
           </button>
+
+          {/* Ollama Status Indicator */}
+          <div className="flex items-center gap-2 px-3 py-1.5">
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${
+                ollamaRunning === null
+                  ? 'bg-yellow-400 animate-pulse'
+                  : ollamaRunning
+                    ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)] animate-pulse'
+                    : 'bg-red-500'
+              }`}
+            />
+            <span className="text-[10px] text-muted-foreground">
+              {ollamaRunning === null
+                ? 'Checking Ollama...'
+                : ollamaRunning
+                  ? 'Ollama running'
+                  : 'Ollama offline'}
+            </span>
+          </div>
         </div>
       </aside>
 

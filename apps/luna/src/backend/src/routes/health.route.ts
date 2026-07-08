@@ -1,7 +1,7 @@
-import { Router } from 'express'
+import { IRouter, Router } from 'express'
 import { getHealth } from '../controllers/health/health.controller'
 
-const router = Router()
+const router: IRouter = Router()
 
 router.get('/', getHealth)
 

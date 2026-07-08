@@ -10,22 +10,29 @@ import {
   CornerDownRight,
   Check
 } from 'lucide-react'
+import { TerminalAgent } from '@/Agents/Terminal/Terminal'
 
 interface MessageItemProps {
   role: 'user' | 'assistant'
   content: string
+  images?: string[]
   assistantName: string
   isThinking?: boolean
   isStreaming?: boolean
   onSuggestionClick?: (text: string) => void
+  onPermissionGranted?: (execute: boolean) => void
+  onCommandExecuted?: (command: string, success: boolean, output: string) => void
 }
 
 export const MessageItem: React.FC<MessageItemProps> = ({
   role,
   content,
+  images,
   isThinking = false,
   isStreaming = false,
-  onSuggestionClick
+  onSuggestionClick,
+  onPermissionGranted = () => {},
+  onCommandExecuted
 }) => {
   const isUser = role === 'user'
   const [copied, setCopied] = useState(false)
@@ -39,10 +46,22 @@ export const MessageItem: React.FC<MessageItemProps> = ({
 
   if (isUser) {
     return (
-      <div className="flex justify-end w-full animate-[fadeIn_0.2s_ease-out]">
+      <div className="flex flex-col items-end w-full animate-[fadeIn_0.2s_ease-out] space-y-1.5">
         <div className="bg-neutral-800/90 text-foreground text-xs sm:text-sm px-4 py-2.5 rounded-2xl max-w-[85%] font-medium">
           {content}
         </div>
+        {images && images.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1 justify-end max-w-[85%]">
+            {images.map((img, idx) => (
+              <img
+                key={idx}
+                src={img}
+                alt="uploaded"
+                className="max-w-[200px] max-h-[150px] rounded-xl object-contain border border-border bg-neutral-900/40 shadow-sm"
+              />
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -68,49 +87,109 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               style={{ animationDelay: '300ms' }}
             />
           </span>
-        ) : content ? (
-          <div className="whitespace-normal">
-            <ReactMarkdown
-              components={{
-                p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
-                ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>,
-                ol: ({ children }) => (
-                  <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
-                ),
-                li: ({ children }) => (
-                  <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
-                ),
-                h1: ({ children }) => (
-                  <h1 className="text-lg font-bold mb-2 text-foreground">{children}</h1>
-                ),
-                h2: ({ children }) => (
-                  <h2 className="text-base font-bold mb-2 text-foreground">{children}</h2>
-                ),
-                h3: ({ children }) => (
-                  <h3 className="text-sm font-bold mb-1 text-foreground">{children}</h3>
-                ),
-                code: ({ children }) => (
-                  <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
-                    {children}
-                  </code>
-                ),
-                pre: ({ children }) => (
-                  <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
-                    {children}
-                  </pre>
-                ),
-                hr: () => null
-              }}
-            >
-              {content}
-            </ReactMarkdown>
+        ) : (
+          <div>
+            {content.includes('[EXECUTE_COMMAND:') ? (
+              (() => {
+                const parts = content.split(/(\[EXECUTE_COMMAND:[^\]]+\])/g)
+                return parts.map((part, i) => {
+                  if (part.startsWith('[EXECUTE_COMMAND:') && part.endsWith(']')) {
+                    const command = part.slice(17, -1).trim()
+                    return (
+                      <TerminalAgent
+                        key={i}
+                        command={command}
+                        onPermissionGranted={onPermissionGranted}
+                        onCommandExecuted={onCommandExecuted}
+                      />
+                    )
+                  }
+                  return (
+                    <ReactMarkdown
+                      key={i}
+                      components={{
+                        p: ({ children }) => (
+                          <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+                        ),
+                        ul: ({ children }) => (
+                          <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>
+                        ),
+                        ol: ({ children }) => (
+                          <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
+                        ),
+                        li: ({ children }) => (
+                          <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
+                        ),
+                        h1: ({ children }) => (
+                          <h1 className="text-lg font-bold mb-2 text-foreground">{children}</h1>
+                        ),
+                        h2: ({ children }) => (
+                          <h2 className="text-base font-bold mb-2 text-foreground">{children}</h2>
+                        ),
+                        h3: ({ children }) => (
+                          <h3 className="text-sm font-bold mb-1 text-foreground">{children}</h3>
+                        ),
+                        code: ({ children }) => (
+                          <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
+                            {children}
+                          </code>
+                        ),
+                        pre: ({ children }) => (
+                          <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
+                            {children}
+                          </pre>
+                        ),
+                        hr: () => null
+                      }}
+                    >
+                      {part}
+                    </ReactMarkdown>
+                  )
+                })
+              })()
+            ) : (
+              <ReactMarkdown
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+                  ul: ({ children }) => (
+                    <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>
+                  ),
+                  ol: ({ children }) => (
+                    <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>
+                  ),
+                  li: ({ children }) => (
+                    <li className="text-xs sm:text-sm leading-relaxed">{children}</li>
+                  ),
+                  h1: ({ children }) => (
+                    <h1 className="text-lg font-bold mb-2 text-foreground">{children}</h1>
+                  ),
+                  h2: ({ children }) => (
+                    <h2 className="text-base font-bold mb-2 text-foreground">{children}</h2>
+                  ),
+                  h3: ({ children }) => (
+                    <h3 className="text-sm font-bold mb-1 text-foreground">{children}</h3>
+                  ),
+                  code: ({ children }) => (
+                    <code className="bg-neutral-850 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-400">
+                      {children}
+                    </code>
+                  ),
+                  pre: ({ children }) => (
+                    <pre className="bg-neutral-900/90 border border-border/60 p-3 rounded-lg overflow-x-auto my-2.5 font-mono text-xs text-foreground/90 shadow-sm leading-normal">
+                      {children}
+                    </pre>
+                  ),
+                  hr: () => null
+                }}
+              >
+                {content}
+              </ReactMarkdown>
+            )}
             {/* Blinking cursor only on the live streaming bubble */}
             {isStreaming && (
               <span className="inline-block w-0.5 h-3.5 bg-foreground/70 ml-0.5 align-middle animate-pulse" />
             )}
           </div>
-        ) : (
-          <span className="text-muted-foreground/40 animate-pulse font-sans">Thinking...</span>
         )}
       </div>
 

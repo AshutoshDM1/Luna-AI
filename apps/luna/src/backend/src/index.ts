@@ -11,6 +11,17 @@ app.use(express.json())
 // Use consolidated API routes
 app.use('/api', apiRouter)
 
+// 404 handler — always return JSON, never HTML
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not found' })
+})
+
+// Global error handler — always return JSON, never HTML
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[backend] Unhandled error:', err)
+  res.status(500).json({ error: err.message || 'Internal server error' })
+})
+
 export function startServer() {
   app.listen(port, () => {
     console.log(`🚀 Express server running locally on http://localhost:${port}`)
